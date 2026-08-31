@@ -1,0 +1,25 @@
+name = "cis-dashboard"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "REEMPLAZA_CON_TU_KV_NAMESPACE_ID"
+
+# Secretos (NO se ponen aqui — se configuran con `wrangler secret put <NOMBRE>`):
+#   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, AUTH_USERNAME, AUTH_PASSWORD,
+#   GITHUB_PAT, GITHUB_REPO (formato "usuario/repo"), GITHUB_WORKFLOW_FILE (update-cycle.yml)
+
+[vars]
+LOGIN_MAX_ATTEMPTS = "5"
+LOGIN_LOCKOUT_MINUTES = "15"
+SESSION_DAYS = "30"
+GEMINI_ENABLE_SEARCH_GROUNDING = "false"
+GITHUB_WORKFLOW_FILE = "update-cycle.yml"
+GITHUB_BRANCH = "main"

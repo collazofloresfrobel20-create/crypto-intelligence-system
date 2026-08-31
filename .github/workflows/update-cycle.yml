@@ -1,0 +1,42 @@
+name: CIS update cycle
+
+on:
+  schedule:
+    # Cada 12h. GitHub Actions cron es en UTC. Ajusta si quieres otra frecuencia.
+    - cron: "0 */12 * * *"
+  workflow_dispatch: {}  # permite disparar manualmente (botón "Actualizar sistema" del dashboard lo usa)
+
+concurrency:
+  group: cis-update-cycle
+  cancel-in-progress: false  # nunca cancelar un ciclo a medias, solo esperar a que termine
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90  # margen amplio: un ciclo real puede tardar 30-60 min por el rate limit gratuito de Gemini
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Correr ciclo de actualizacion
+        working-directory: backend
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL_FAST: gemini-3.5-flash-lite
+          GEMINI_MODEL_SMART: gemini-3.5-flash
+          GEMINI_ENABLE_SEARCH_GROUNDING: ${{ vars.GEMINI_ENABLE_SEARCH_GROUNDING }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_NOTIFY_VERDICTS: "Strong Opportunity"
+          GOPLUS_APP_KEY: ${{ secrets.GOPLUS_APP_KEY }}
+          GOPLUS_APP_SECRET: ${{ secrets.GOPLUS_APP_SECRET }}
+        run: python scripts/run_once.py

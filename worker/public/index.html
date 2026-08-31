@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto Intelligence System</title>
+<style>
+  :root {
+    --bg: #fbfbfa;
+    --surface: #fdfdfc;
+    --border: #e8e6e2;
+    --border-strong: #d8d5cf;
+    --ink: #171717;
+    --ink-soft: #3a3a38;
+    --muted: #8a8985;
+    --faint: #b4b2ac;
+    --black: #111111;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  h1, h2, h3 { font-family: Georgia, 'Times New Roman', serif; letter-spacing: -0.015em; font-weight: 600; }
+
+  header {
+    padding: 30px 40px 22px; display: flex; justify-content: space-between; align-items: flex-end;
+    max-width: 920px; margin: 0 auto;
+  }
+  header h1 { font-size: 22px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 12.5px; margin-top: 6px; font-family: inherit; }
+  header .session { display: flex; align-items: center; gap: 14px; }
+  header .session span { font-size: 12px; color: var(--faint); }
+  .link-btn {
+    background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px; padding: 0; font-family: inherit;
+  }
+  .link-btn:hover { color: var(--ink); }
+
+  nav.tabs {
+    max-width: 920px; margin: 0 auto; display: flex; gap: 28px; padding: 0 40px 18px;
+    border-bottom: 1px solid var(--border); overflow-x: auto;
+  }
+  nav.tabs button {
+    background: none; border: none; padding: 6px 0; font-size: 12.5px; color: var(--faint);
+    cursor: pointer; border-bottom: 2px solid transparent; font-weight: 600; white-space: nowrap;
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  nav.tabs button.active { color: var(--ink); border-bottom-color: var(--black); }
+  nav.tabs button:hover { color: var(--ink-soft); }
+
+  main { max-width: 920px; margin: 0 auto; padding: 44px 40px 100px; }
+  .view { display: none; flex-direction: column; gap: 52px; }
+  .view.active { display: flex; }
+
+  section.block { display: flex; flex-direction: column; gap: 14px; }
+  section.block h2 { font-size: 18px; margin: 0; }
+  section.block .desc { color: var(--muted); font-size: 13px; margin: 0; max-width: 62ch; line-height: 1.6; }
+
+  .rule { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+  button.btn {
+    background: var(--black); color: #fff; border: none; padding: 12px 20px; border-radius: 6px;
+    font-size: 13px; cursor: pointer; font-weight: 600; transition: transform .1s, background .15s;
+  }
+  button.btn:hover { background: #2b2b2b; }
+  button.btn:active { transform: scale(0.98); }
+  button.btn:disabled { opacity: .4; cursor: not-allowed; }
+  button.btn.secondary { background: transparent; color: var(--ink-soft); border: 1px solid var(--border-strong); }
+  button.btn.secondary:hover { background: var(--surface); border-color: var(--ink); }
+  button.btn.small { padding: 8px 14px; font-size: 12px; }
+
+  #log {
+    background: #14140f; color: #c9c8c2; font-family: 'SF Mono', Consolas, monospace;
+    font-size: 11.5px; padding: 16px 18px; border-radius: 8px; max-height: 240px; overflow-y: auto;
+    white-space: pre-wrap; line-height: 1.6;
+  }
+
+  /* Hero numbers -- sin cajas, tipografia grande separada por espacio */
+  .numbers-row { display: flex; flex-wrap: wrap; gap: 48px; padding: 4px 0; }
+  .numbers-row .num-item .num { font-size: 34px; font-weight: 600; font-family: Georgia, serif; line-height: 1; }
+  .numbers-row .num-item .lbl { font-size: 11.5px; color: var(--muted); margin-top: 8px; letter-spacing: .02em; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+  .card { border-top: 1px solid var(--border-strong); padding-top: 18px; }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 10px; }
+  .card-head .sym { font-size: 18px; font-weight: 600; font-family: Georgia, serif; }
+  .card-head .name { color: var(--muted); font-size: 12px; display: block; margin-top: 2px; }
+
+  .badge {
+    display: inline-block; padding: 4px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; border: 1px solid transparent;
+  }
+  .v-strong { background: var(--black); color: #fff; }
+  .v-watch { background: #45443f; color: #fff; }
+  .v-highrisk { background: transparent; color: var(--ink); border-color: var(--black); }
+  .v-reject { background: var(--border); color: var(--muted); }
+  .v-insufficient { background: transparent; color: var(--faint); border-style: dashed; border-color: var(--border-strong); }
+
+  .scores { display: flex; gap: 22px; margin: 14px 0; flex-wrap: wrap; }
+  .score-item .val { font-size: 18px; font-weight: 700; font-family: Georgia, serif; }
+  .score-item .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+
+  .section-title { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .07em; margin: 14px 0 5px; font-weight: 700; }
+  .text-block { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); }
+  ul.compact { margin: 4px 0; padding-left: 16px; font-size: 12.5px; color: var(--ink-soft); }
+  ul.compact li { margin-bottom: 3px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--faint); padding: 0 10px 10px 0; font-weight: 700; border-bottom: 1px solid var(--border-strong);
+  }
+  table td { padding: 12px 10px 12px 0; border-bottom: 1px solid var(--border); color: var(--ink-soft); }
+  table tr:last-child td { border-bottom: none; }
+  .table-wrap { overflow-x: auto; }
+
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .faint { color: var(--faint); }
+
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px,1fr)); gap: 20px 28px; }
+  label.cfg { font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  input[type=number] {
+    width: 100%; background: transparent; border: none; border-bottom: 1px solid var(--border-strong);
+    color: var(--ink); padding: 7px 2px; font-size: 14px; font-family: inherit;
+  }
+  input[type=number]:focus { outline: none; border-bottom-color: var(--black); }
+
+  .disclaimer { font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--black); padding-left: 16px; line-height: 1.6; }
+
+  .pill-inline { display: inline-block; background: var(--border); color: var(--ink-soft); font-size: 10.5px; padding: 3px 9px; border-radius: 10px; margin: 2px 5px 2px 0; }
+
+  .empty-state { padding: 30px 0; color: var(--faint); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Crypto Intelligence System</h1>
+    <div class="sub">Investigación de oportunidades tempranas &mdash; Binance Alpha &middot; Horizonte ~7 días</div>
+  </div>
+  <div class="session">
+    <span id="sessionUser"></span>
+    <button class="link-btn" id="btnLogout">Cerrar sesión</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-view="resumen">Resumen</button>
+  <button class="tab-btn" data-view="oportunidades">Oportunidades</button>
+  <button class="tab-btn" data-view="descartados">Descartados</button>
+  <button class="tab-btn" data-view="historial">Historial</button>
+  <button class="tab-btn" data-view="autocorreccion">Auto-corrección</button>
+  <button class="tab-btn" data-view="configuracion">Configuración</button>
+</nav>
+
+<main>
+
+  <!-- RESUMEN -->
+  <section class="view active" id="view-resumen">
+    <section class="block">
+      <p class="disclaimer">
+        Sistema de investigación y apoyo a decisiones. No garantiza rendimientos, no ejecuta
+        operaciones y no maneja llaves privadas. "Insufficient Evidence" y "Reject" son resultados
+        tan válidos como "Strong Opportunity".
+      </p>
+    </section>
+
+    <section class="block">
+      <h2>Actualizar sistema</h2>
+      <p class="desc">
+        Cada actualización busca nuevos candidatos en Binance Alpha, analiza a fondo los mejores,
+        y revisa el precio real de las predicciones anteriores &mdash; seleccionadas y descartadas &mdash;
+        para mantenerse calibrado.
+      </p>
+      <div class="row">
+        <button class="btn" id="btnUpdate">Actualizar sistema</button>
+        <span id="runStatus" class="muted"></span>
+      </div>
+      <div id="log" style="display:none;"></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Estado general</h2>
+      <div class="numbers-row" id="summaryStats"></div>
+    </section>
+  </section>
+
+  <!-- OPORTUNIDADES -->
+  <section class="view" id="view-oportunidades">
+    <section class="block">
+      <h2>Oportunidades detectadas</h2>
+      <p class="desc">Candidatos que pasaron los filtros duros y completaron el pipeline de investigación y debate.</p>
+      <div id="predictions" class="cards"><div class="empty-state">Aún no hay predicciones. Ejecuta una actualización desde Resumen.</div></div>
+    </section>
+  </section>
+
+  <!-- DESCARTADOS -->
+  <section class="view" id="view-descartados">
+    <section class="block">
+      <h2>Descartados por filtros</h2>
+      <p class="desc">
+        Tokens rechazados por los hard filters, sin pasar por el pipeline de agentes. Se les
+        sigue el precio real para verificar si el filtro que los descartó estuvo justificado.
+      </p>
+      <div id="discardedTable"><div class="empty-state">Sin datos todavía.</div></div>
+    </section>
+  </section>
+
+  <!-- HISTORIAL -->
+  <section class="view" id="view-historial">
+    <section class="block">
+      <h2>Historial de resultados</h2>
+      <p class="desc">Qué tan bien le ha ido al sistema en total: aciertos, rendimiento, tiempo y una simulación de dinero puramente educativa.</p>
+      <div id="historyBox"><div class="empty-state">Sin datos todavía.</div></div>
+    </section>
+  </section>
+
+  <!-- AUTO-CORRECCIÓN -->
+  <section class="view" id="view-autocorreccion">
+    <section class="block">
+      <h2>Rendimiento histórico</h2>
+      <p class="desc">Precisión de las predicciones analizadas, evaluadas contra su precio real tras el horizonte de 7 días. La evaluación ya corre sola en cada actualización automática (cada 12h) — este botón solo refresca la vista.</p>
+      <div class="row" style="margin-bottom:6px;">
+        <button class="btn secondary small" id="btnStats">Refrescar</button>
+      </div>
+      <div id="statsBox"></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Eficacia de los filtros</h2>
+      <p class="desc">Compara lo analizado (pasó los filtros) contra lo descartado, para saber si los umbrales están bien calibrados.</p>
+      <div id="efficacyBox"></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Auto-corrección</h2>
+      <p class="desc">Diagnóstico automático generado tras cada actualización con evaluaciones nuevas.</p>
+      <div id="diagnosisBox"><div class="empty-state">Aún no hay diagnósticos.</div></div>
+    </section>
+  </section>
+
+  <!-- CONFIGURACIÓN -->
+  <section class="view" id="view-configuracion">
+    <section class="block">
+      <h2>Filtros duros</h2>
+      <p class="desc">Umbrales usados en cada actualización para separar candidatos de descartados.</p>
+      <div class="form-grid" id="configForm">
+        <label class="cfg">Liquidez mínima (USD)<input type="number" id="cfgMinLiquidity"></label>
+        <label class="cfg">Volumen 24h mínimo (USD)<input type="number" id="cfgMinVolume"></label>
+        <label class="cfg">Market cap máximo (USD)<input type="number" id="cfgMaxMcap"></label>
+        <label class="cfg">Holders mínimos<input type="number" id="cfgMinHolders"></label>
+        <label class="cfg">Antigüedad máxima de listado (días)<input type="number" id="cfgMaxAge"></label>
+        <label class="cfg">Candidatos por actualización<input type="number" id="cfgMaxCandidates"></label>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button class="btn" id="btnSaveConfig">Guardar cambios</button>
+        <span id="configStatus" class="muted"></span>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Sistema</h2>
+      <div class="table-wrap">
+        <table><tbody id="modelInfo"></tbody></table>
+      </div>
+    </section>
+  </section>
+
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (res.status === 401) {
+    window.location.href = "/login";
+    throw new Error("No autenticado");
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
+$("btnLogout").onclick = async () => {
+  await fetch("/api/auth/logout", { method: "POST" });
+  window.location.href = "/login";
+};
+
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    btn.classList.add("active");
+    $("view-" + btn.dataset.view).classList.add("active");
+  };
+});
+
+const VERDICT_CLASS = {
+  "Strong Opportunity": "v-strong",
+  "Watchlist": "v-watch",
+  "High Risk / Speculative": "v-highrisk",
+  "Reject": "v-reject",
+  "Insufficient Evidence": "v-insufficient",
+};
+
+function renderPredictions(preds) {
+  const el = $("predictions");
+  if (!preds.length) { el.innerHTML = '<div class="empty-state">Sin resultados todavía.</div>'; return; }
+  el.innerHTML = preds.map(p => {
+    const vclass = VERDICT_CLASS[p.verdict] || "v-insufficient";
+    const evidence = Array.isArray(p.key_evidence) ? p.key_evidence : [];
+    const risks = Array.isArray(p.main_risks) ? p.main_risks : [];
+    return `
+    <div class="card">
+      <div class="card-head">
+        <div><span class="sym">${p.symbol || "?"}</span><span class="name">${p.name || ""}</span></div>
+        <span class="badge ${vclass}">${p.verdict || "N/A"}</span>
+      </div>
+      <div class="scores">
+        <div class="score-item"><div class="val">${p.opportunity_score ?? "-"}</div><div class="lbl">Opportunity</div></div>
+        <div class="score-item"><div class="val">${p.risk_score ?? "-"}</div><div class="lbl">Risk</div></div>
+        <div class="score-item"><div class="val">${p.confidence_score ?? "-"}</div><div class="lbl">Confidence</div></div>
+        <div class="score-item"><div class="val">${p.earliness_score ?? "-"}</div><div class="lbl">Earliness</div></div>
+      </div>
+      <div class="section-title">Bull case</div>
+      <div class="text-block">${p.bull_case || "-"}</div>
+      <div class="section-title">Bear case</div>
+      <div class="text-block">${p.bear_case || "-"}</div>
+      ${evidence.length ? `<div class="section-title">Evidencia clave</div><ul class="compact">${evidence.map(e=>`<li>${e}</li>`).join("")}</ul>` : ""}
+      ${risks.length ? `<div class="section-title">Riesgos principales</div><ul class="compact">${risks.map(r=>`<li>${r}</li>`).join("")}</ul>` : ""}
+      <div class="section-title">Nota del sistema</div>
+      <div class="text-block">${p.system_note || "-"}</div>
+      ${p.status === 'evaluated' ? `<div class="section-title">Resultado real</div><div class="text-block">Retorno máximo: ${p.max_return_pct}% &middot; Drawdown: ${p.max_drawdown_pct}% &middot; Tesis: ${p.thesis_result}</div>` : `<div class="section-title">Estado</div><div class="text-block faint">Pendiente de evaluar (horizonte ${p.horizon_days} días)</div>`}
+    </div>`;
+  }).join("");
+}
+
+function renderDiscarded(rows) {
+  const el = $("discardedTable");
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">Sin datos todavía.</div>'; return; }
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Símbolo</th><th>Razón de rechazo</th><th>Estado</th><th>Retorno máx. real</th><th>¿Se perdió la oportunidad?</th></tr></thead>
+    <tbody>
+      ${rows.map(r => {
+        const reasons = Array.isArray(r.rejection_reasons) ? r.rejection_reasons : [];
+        const missed = r.status === 'evaluated' && (r.max_return_pct ?? 0) >= 20;
+        return `<tr>
+          <td><strong>${r.symbol}</strong></td>
+          <td>${reasons.map(x => `<span class="pill-inline">${x}</span>`).join("")}</td>
+          <td>${r.status}</td>
+          <td>${r.status === 'evaluated' ? r.max_return_pct + '%' : '-'}</td>
+          <td>${r.status === 'evaluated' ? (missed ? 'Sí' : 'No') : '-'}</td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  </table></div>`;
+}
+
+async function refreshPredictions() {
+  const preds = await api("/api/predictions?category=analyzed");
+  renderPredictions(preds);
+  return preds;
+}
+
+async function refreshDiscarded() {
+  const rows = await api("/api/predictions?category=discarded");
+  renderDiscarded(rows);
+  return rows;
+}
+
+function numItem(num, lbl) {
+  return `<div class="num-item"><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`;
+}
+
+async function refreshSummary() {
+  const [analyzed, discarded, diag] = await Promise.all([
+    api("/api/predictions?category=analyzed").catch(() => []),
+    api("/api/predictions?category=discarded").catch(() => []),
+    api("/api/diagnoses/latest").catch(() => null),
+  ]);
+  const evaluated20 = analyzed.filter(p => p.status === 'evaluated' && (p.max_return_pct ?? 0) >= 20).length;
+  $("summaryStats").innerHTML = [
+    numItem(analyzed.length, "Oportunidades activas"),
+    numItem(discarded.length, "Descartados en seguimiento"),
+    numItem(evaluated20, "Evaluadas +20%"),
+    numItem(diag ? new Date(diag.created_at).toLocaleDateString() : "Ninguno", "Último diagnóstico"),
+  ].join("");
+}
+
+// El pipeline pesado ya no corre en el Worker (los limites de ejecucion no alcanzan para un
+// ciclo real de 10-60 min) -- este boton dispara el workflow de GitHub Actions y espera a que
+// aparezca su corrida en pipeline_runs para poder mostrar el log en vivo.
+$("btnUpdate").onclick = async () => {
+  $("btnUpdate").disabled = true;
+  $("runStatus").textContent = "Disparando actualización en GitHub Actions...";
+  const before = await api("/api/runs").catch(() => []);
+  const beforeIds = new Set(before.map((r) => r.id));
+
+  try {
+    await api("/api/update", { method: "POST" });
+  } catch (e) {
+    $("runStatus").textContent = e.message;
+    $("btnUpdate").disabled = false;
+    return;
+  }
+
+  $("runStatus").textContent = "Disparada. Esperando a que GitHub Actions la arranque (puede tardar 1-2 min)...";
+  $("log").style.display = "block";
+  $("log").textContent = "";
+
+  let currentRunId = null;
+  const poll = setInterval(async () => {
+    if (!currentRunId) {
+      const runs = await api("/api/runs").catch(() => []);
+      const fresh = runs.find((r) => !beforeIds.has(r.id));
+      if (!fresh) return;  // aun no aparece, seguir esperando
+      currentRunId = fresh.id;
+    }
+    const run = await api(`/api/runs/${currentRunId}`);
+    const log = JSON.parse(run.log || "[]");
+    $("log").textContent = log.join("\n");
+    $("log").scrollTop = $("log").scrollHeight;
+    $("runStatus").textContent = `Estado: ${run.status}`;
+    if (run.status !== "running") {
+      clearInterval(poll);
+      $("btnUpdate").disabled = false;
+      refreshPredictions();
+      refreshDiscarded();
+      refreshSummary();
+      renderStats(await api("/api/backtest/stats").catch(() => ({ evaluated_predictions: 0 })));
+      renderEfficacy(await api("/api/backtest/filter-efficacy").catch(() => null));
+      renderHistory(await api("/api/history/overview").catch(() => null));
+      loadDiagnosis();
+    }
+  }, 5000);
+};
+
+function renderStats(s) {
+  if (!s || !s.evaluated_predictions) {
+    $("statsBox").innerHTML = `<p class="muted">${s && s.message ? s.message : "Aún no hay predicciones evaluadas."}</p>`;
+    return;
+  }
+  $("statsBox").innerHTML = `
+    <div class="numbers-row">
+      ${numItem(s.total_predictions, "Total predicciones")}
+      ${numItem(s.evaluated_predictions, "Evaluadas")}
+      ${numItem(s.pct_reached_plus20 + "%", "Alcanzaron +20%")}
+      ${numItem(s.pct_reached_plus30 + "%", "Alcanzaron +30%")}
+      ${numItem(s.avg_max_return_pct + "%", "Retorno máx. promedio")}
+      ${numItem(s.avg_max_drawdown_pct + "%", "Drawdown promedio")}
+    </div>
+    <div class="section-title" style="margin-top:22px;">Precisión por rango de Confidence</div>
+    <ul class="compact">${Object.entries(s.accuracy_by_confidence_bucket).map(([b,v]) => `<li>Confidence ${b}: ${v.success_rate_pct}% de éxito (n=${v.n})</li>`).join("")}</ul>
+  `;
+}
+
+function renderEfficacy(e) {
+  const box = $("efficacyBox");
+  if (!e || (!e.analyzed.n && !e.discarded.n)) {
+    box.innerHTML = '<div class="empty-state">Aún no hay suficientes evaluaciones.</div>';
+    return;
+  }
+  const missed = Object.entries(e.missed_opportunities_reasons || {});
+  box.innerHTML = `
+    <div class="numbers-row">
+      ${numItem((e.analyzed.pct_reached_plus20 ?? '-') + '%', `Analizados que llegaron a +20% (n=${e.analyzed.n})`)}
+      ${numItem((e.discarded.pct_reached_plus20 ?? '-') + '%', `Descartados que igual llegaron a +20% (n=${e.discarded.n})`)}
+    </div>
+    ${missed.length ? `<div class="section-title" style="margin-top:18px;">Razones de rechazo que dejaron pasar oportunidades reales</div>
+      <ul class="compact">${missed.map(([r,c]) => `<li>${r} &mdash; ${c} caso(s)</li>`).join("")}</ul>` : ''}
+  `;
+}
+
+function renderHistory(h) {
+  const box = $("historyBox");
+  if (!h || !h.total_evaluated) {
+    box.innerHTML = `<div class="empty-state">${h && h.message ? h.message : "Sin datos todavía."}</div>`;
+    return;
+  }
+  const sim = h.hypothetical_simulation;
+  const verdictRows = Object.entries(h.accuracy_by_verdict).map(([v, s]) => `
+    <tr>
+      <td>${v}</td><td>${s.n}</td><td>${s.success_rate_pct}%</td>
+      <td>${s.avg_max_return_pct}%</td><td>${s.avg_return_at_horizon_pct}%</td>
+    </tr>`).join("");
+
+  box.innerHTML = `
+    ${h.low_sample_warning ? `<p class="disclaimer" style="margin-bottom:22px;">Muestra pequeña (${h.total_evaluated} evaluadas, mínimo recomendado ${h.min_sample_for_confidence}): trata estas cifras con cautela todavía, no como una precisión confirmada.</p>` : ''}
+    <div class="numbers-row">
+      ${numItem(h.total_updates_run, "Actualizaciones corridas")}
+      ${numItem(h.total_analyzed, "Tokens analizados en total")}
+      ${numItem(h.overall_hit_rate_pct + "%", "Tasa de acierto general")}
+      ${numItem(h.avg_time_to_max_hours + "h", "Tiempo promedio a máximo")}
+    </div>
+
+    <div class="section-title" style="margin-top:26px;">Precisión por tipo de veredicto</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Veredicto</th><th>N</th><th>% Éxito</th><th>Retorno máx. prom.</th><th>Retorno a los 7 días prom.</th></tr></thead>
+        <tbody>${verdictRows}</tbody>
+      </table>
+    </div>
+
+    <div class="section-title" style="margin-top:26px;">Mejor y peor llamada</div>
+    <div class="text-block">Mejor: <strong>${h.best_call.symbol}</strong> (${h.best_call.max_return_pct}%) &middot; Peor: <strong>${h.worst_call.symbol}</strong> (${h.worst_call.max_return_pct}%)</div>
+
+    <div class="section-title" style="margin-top:26px;">Simulación de dinero (educativa)</div>
+    <p class="muted" style="max-width:60ch;">${sim.disclaimer}</p>
+    <div class="numbers-row" style="margin-top:6px;">
+      ${numItem("$" + sim.total_staked_usd, `Capital hipotético (US$${sim.stake_per_pick_usd} x pick)`)}
+      ${numItem("$" + sim.hold_to_horizon_value_usd, `Si se mantiene a 7 días (${sim.hold_to_horizon_return_pct}%)`)}
+      ${numItem("$" + sim.best_case_value_usd, `Si se vende en el máximo (${sim.best_case_return_pct}%)`)}
+    </div>
+  `;
+}
+
+async function loadDiagnosis() {
+  try {
+    const diag = await api("/api/diagnoses/latest");
+    const patterns = Array.isArray(diag.patterns_found) ? diag.patterns_found : [];
+    const adj = Array.isArray(diag.proposed_adjustments) ? diag.proposed_adjustments : [];
+    $("diagnosisBox").innerHTML = `
+      <p class="muted">Basado en ${diag.based_on_evaluated} evaluaciones &middot; ${new Date(diag.created_at).toLocaleString()} &middot; estado: ${diag.status}</p>
+      <div class="text-block">${diag.summary || ""}</div>
+      ${patterns.length ? `<div class="section-title">Patrones detectados</div><ul class="compact">${patterns.map(p=>`<li>${p}</li>`).join("")}</ul>` : ""}
+      ${adj.length ? `
+        <div class="section-title">Ajustes propuestos</div>
+        <ul class="compact">${adj.map(a => `<li><strong>${a.parameter}</strong>: ${a.current_value} &rarr; ${a.proposed_value}. ${a.reason}</li>`).join("")}</ul>
+        ${diag.status === 'proposed' ? `<div class="row" style="margin-top:12px;"><button class="btn small" id="btnApplyDiag">Aplicar ajustes propuestos</button></div>` : ''}
+      ` : ""}
+    `;
+    const applyBtn = document.getElementById("btnApplyDiag");
+    if (applyBtn) {
+      applyBtn.onclick = async () => {
+        await api(`/api/diagnoses/${diag.id}/apply`, {
+          method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({})
+        });
+        loadDiagnosis();
+        loadConfig();
+      };
+    }
+  } catch (e) {
+    $("diagnosisBox").innerHTML = '<div class="empty-state">Aún no hay diagnósticos.</div>';
+  }
+}
+
+$("btnStats").onclick = async () => {
+  renderStats(await api("/api/backtest/stats"));
+  renderEfficacy(await api("/api/backtest/filter-efficacy"));
+};
+
+async function loadConfig() {
+  const cfg = await api("/api/config");
+  $("cfgMinLiquidity").value = cfg.MIN_LIQUIDITY_USD;
+  $("cfgMinVolume").value = cfg.MIN_VOLUME_24H_USD;
+  $("cfgMaxMcap").value = cfg.MAX_MARKET_CAP_USD;
+  $("cfgMinHolders").value = cfg.MIN_HOLDERS;
+  $("cfgMaxAge").value = cfg.MAX_LISTING_AGE_DAYS;
+  $("cfgMaxCandidates").value = cfg.MAX_CANDIDATES_PER_RUN;
+  $("modelInfo").innerHTML = `
+    <tr><td>Modelo analistas</td><td>${cfg.GEMINI_MODEL_FAST}</td></tr>
+    <tr><td>Modelo debate/juez</td><td>${cfg.GEMINI_MODEL_SMART}</td></tr>
+    <tr><td>Búsqueda web (grounding)</td><td>${cfg.GEMINI_ENABLE_SEARCH_GROUNDING ? "activada" : "desactivada (requiere facturación en Google Cloud)"}</td></tr>
+    <tr><td>Actualización automática</td><td>cron de GitHub Actions cada 12h (ver .github/workflows/update-cycle.yml)</td></tr>
+    <tr><td>API key de Gemini / Telegram</td><td>configuradas como secretos en GitHub Actions, no visibles desde aquí</td></tr>
+    <tr><td>Bloqueo de login</td><td>${cfg.LOGIN_MAX_ATTEMPTS} intentos fallidos &rarr; ${cfg.LOGIN_LOCKOUT_MINUTES} min de bloqueo</td></tr>
+  `;
+}
+
+$("btnSaveConfig").onclick = async () => {
+  const body = {
+    MIN_LIQUIDITY_USD: parseFloat($("cfgMinLiquidity").value),
+    MIN_VOLUME_24H_USD: parseFloat($("cfgMinVolume").value),
+    MAX_MARKET_CAP_USD: parseFloat($("cfgMaxMcap").value),
+    MIN_HOLDERS: parseInt($("cfgMinHolders").value),
+    MAX_LISTING_AGE_DAYS: parseInt($("cfgMaxAge").value),
+    MAX_CANDIDATES_PER_RUN: parseInt($("cfgMaxCandidates").value),
+  };
+  await api("/api/config", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+  $("configStatus").textContent = "Guardado (aplica a la sesión actual del backend).";
+  setTimeout(() => $("configStatus").textContent = "", 4000);
+};
+
+(async () => {
+  $("sessionUser").textContent = "";
+  refreshPredictions();
+  refreshDiscarded();
+  refreshSummary();
+  loadConfig();
+  renderStats(await api("/api/backtest/stats").catch(() => null));
+  renderEfficacy(await api("/api/backtest/filter-efficacy").catch(() => null));
+  renderHistory(await api("/api/history/overview").catch(() => null));
+  loadDiagnosis();
+})();
+</script>
+</body>
+</html>

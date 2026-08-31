@@ -1,0 +1,15 @@
+{
+  "name": "cis-dashboard-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
