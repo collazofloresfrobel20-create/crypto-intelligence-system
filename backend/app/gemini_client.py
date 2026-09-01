@@ -1,13 +1,16 @@
 """
 Wrapper sobre google-genai con:
-  - Una sola API key compartida por todo el proyecto (ver config.py para el porqué).
-  - Throttling de RPM/RPD para respetar el tier gratuito (los límites son por key,
-    no por "agente", así que serializar es obligatorio si se usa una sola key).
-  - Reintentos con backoff ante 429 (rate limit) / errores transitorios.
-  - Modo JSON estructurado (response_schema) para que los agentes devuelvan datos
-    parseables en vez de texto libre.
-  - Google Search grounding opcional, para que los analistas puedan citar
-    evidencia externa real en vez de solo "conocimiento" del modelo.
+  - Rotación automática de API keys para el modelo "smart" (Bull/Bear/Mediador/Juez): la
+    cuota gratuita diaria (confirmada en producción: 20 llamadas/día) es POR PROYECTO de
+    Google Cloud, no por key. Varias keys del MISMO proyecto no ayudan en nada; keys de
+    proyectos DISTINTOS (configuradas en GEMINI_SMART_API_KEYS) sí traen cuota independiente
+    cada una. Cuando la key actual se queda sin cuota del día, se pasa automáticamente a la
+    siguiente sin intervención manual.
+  - Throttling de RPM para no pasarse del límite del tier gratuito.
+  - Reintentos con backoff ante errores transitorios (no ante cuota diaria agotada: ahí no
+    sirve reintentar, se rota de key o se falla rápido si ya no quedan).
+  - Modo JSON estructurado (response_schema) para que los agentes devuelvan datos parseables.
+  - Google Search grounding opcional (requiere facturación habilitada, ver config.py).
 """
 import json
 import time
@@ -20,32 +23,43 @@ from google.genai import types
 from .config import settings
 from .db import get_conn
 
-_client: genai.Client | None = None
+_clients: dict[str, genai.Client] = {}
 _lock = threading.Lock()
 _last_call_ts: list[float] = []
+_exhausted_keys: set[str] = set()  # keys que ya agotaron su cuota diaria en esta corrida
 
 
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        if not settings.GEMINI_API_KEY:
-            raise RuntimeError(
-                "Falta GEMINI_API_KEY en backend/.env. Consigue una key gratuita en "
-                "https://aistudio.google.com/apikey"
-            )
-        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
-    return _client
+def _get_client(api_key: str) -> genai.Client:
+    if api_key not in _clients:
+        _clients[api_key] = genai.Client(api_key=api_key)
+    return _clients[api_key]
+
+
+def _key_pool(model: str) -> list[str]:
+    """Keys disponibles para este modelo, en orden de preferencia, sin duplicados."""
+    if not settings.GEMINI_API_KEY:
+        raise RuntimeError(
+            "Falta GEMINI_API_KEY en backend/.env. Consigue una key gratuita en "
+            "https://aistudio.google.com/apikey"
+        )
+    pool = [settings.GEMINI_API_KEY]
+    if model == settings.GEMINI_MODEL_SMART:
+        pool += [k for k in settings.GEMINI_SMART_API_KEYS if k not in pool]
+    return pool
 
 
 def _check_daily_quota():
+    """Tope de seguridad global (todas las keys combinadas) contra un bug que dispare
+    llamadas sin control — no modela la cuota real de Gemini (esa es por key/proyecto y se
+    maneja con la rotación de keys y el error PerDay más abajo)."""
     today = date.today().isoformat()
     with get_conn() as conn:
         row = conn.execute("SELECT count FROM gemini_usage WHERE day = ?", (today,)).fetchone()
         count = row["count"] if row else 0
         if count >= settings.GEMINI_MAX_RPD:
             raise RuntimeError(
-                f"Límite diario del tier gratuito de Gemini alcanzado ({settings.GEMINI_MAX_RPD} "
-                "llamadas). Intenta de nuevo mañana o sube GEMINI_MAX_RPD si tienes un tier de pago."
+                f"Tope de seguridad diario alcanzado ({settings.GEMINI_MAX_RPD} llamadas "
+                "combinadas). Sube GEMINI_MAX_RPD si esto es un falso positivo."
             )
         if row:
             conn.execute("UPDATE gemini_usage SET count = count + 1 WHERE day = ?", (today,))
@@ -54,7 +68,7 @@ def _check_daily_quota():
 
 
 def _throttle():
-    """Serializa llamadas para no exceder GEMINI_MAX_RPM (todas comparten la misma key)."""
+    """Serializa llamadas para no exceder GEMINI_MAX_RPM (conservador: se comparte entre todas las keys)."""
     with _lock:
         now = time.time()
         window_start = now - 60
@@ -66,6 +80,11 @@ def _throttle():
         _last_call_ts.append(time.time())
 
 
+def _is_daily_quota_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    return "perday" in msg or "requestsperday" in msg or "generaterequestsperday" in msg
+
+
 def generate_json(
     *,
     model: str,
@@ -75,18 +94,23 @@ def generate_json(
     use_search: bool = False,
     max_retries: int = 4,
 ) -> dict:
-    """Llama a Gemini pidiendo salida JSON validada contra response_schema."""
-    client = _get_client()
+    """Llama a Gemini pidiendo salida JSON validada contra response_schema. Rota de API key
+    automáticamente si la cuota diaria de la key actual se agota (ver GEMINI_SMART_API_KEYS)."""
+    pool = [k for k in _key_pool(model) if k not in _exhausted_keys]
+    if not pool:
+        raise RuntimeError(
+            f"Todas las API keys disponibles agotaron su cuota diaria para '{model}'. "
+            "Agrega más en GEMINI_SMART_API_KEYS (una por proyecto de Google Cloud distinto), "
+            "o activa facturación en https://aistudio.google.com."
+        )
 
     config_kwargs = dict(
         system_instruction=system_instruction,
         temperature=0.4,
     )
     if use_search:
-        # Con grounding no se puede forzar response_mime_type=json de forma nativa;
-        # pedimos JSON por instrucción y parseamos de forma tolerante.
         config_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
-        prompt = (
+        search_prompt = (
             prompt
             + "\n\nResponde EXCLUSIVAMENTE con un objeto JSON válido (sin markdown, "
               "sin ```), que cumpla exactamente este JSON schema:\n"
@@ -95,42 +119,48 @@ def generate_json(
     else:
         config_kwargs["response_mime_type"] = "application/json"
         config_kwargs["response_schema"] = response_schema
+        search_prompt = prompt
 
     last_error = None
-    for attempt in range(max_retries):
-        try:
-            _check_daily_quota()
-            _throttle()
-            resp = client.models.generate_content(
-                model=model,
-                contents=prompt,
-                config=types.GenerateContentConfig(**config_kwargs),
-            )
-            text = (resp.text or "").strip()
-            text = _strip_code_fences(text)
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            last_error = e
-            time.sleep(1.5 * (attempt + 1))
-        except Exception as e:
-            last_error = e
-            msg = str(e).lower()
-            if "perday" in msg or "requestsperday" in msg or "generaterequestsperday" in msg:
-                # Cuota DIARIA agotada para este modelo: reintentar no sirve de nada (no se
-                # resetea en segundos), así que fallamos rápido con un mensaje claro en vez de
-                # quemar 4 intentos con backoff.
-                raise RuntimeError(
-                    f"Cuota diaria gratuita agotada para el modelo '{model}'. Prueba de nuevo "
-                    f"mañana, baja MAX_CANDIDATES_PER_RUN, o revisa tus límites reales en "
-                    f"https://aistudio.google.com (Rate limits). Detalle: {e}"
-                ) from e
-            if "429" in msg or "rate" in msg or "resource_exhausted" in msg:
-                time.sleep(8 * (attempt + 1))
-            elif attempt < max_retries - 1:
-                time.sleep(2 * (attempt + 1))
-            else:
-                raise
-    raise RuntimeError(f"Gemini generate_json falló tras {max_retries} intentos: {last_error}")
+    for key in pool:
+        client = _get_client(key)
+        for attempt in range(max_retries):
+            try:
+                _check_daily_quota()
+                _throttle()
+                resp = client.models.generate_content(
+                    model=model,
+                    contents=search_prompt,
+                    config=types.GenerateContentConfig(**config_kwargs),
+                )
+                text = (resp.text or "").strip()
+                text = _strip_code_fences(text)
+                return json.loads(text)
+            except json.JSONDecodeError as e:
+                last_error = e
+                time.sleep(1.5 * (attempt + 1))
+            except Exception as e:
+                last_error = e
+                if _is_daily_quota_error(e):
+                    # Esta key ya no sirve por hoy: márcala y pasa a la siguiente del pool
+                    # (si hay). No tiene caso reintentar la misma key.
+                    _exhausted_keys.add(key)
+                    break
+                msg = str(e).lower()
+                if "429" in msg or "rate" in msg or "resource_exhausted" in msg:
+                    time.sleep(8 * (attempt + 1))
+                elif attempt < max_retries - 1:
+                    time.sleep(2 * (attempt + 1))
+                else:
+                    raise
+        else:
+            # Se agotaron los reintentos con esta key por un error que no era de cuota diaria.
+            raise RuntimeError(f"Gemini generate_json falló tras {max_retries} intentos: {last_error}")
+
+    raise RuntimeError(
+        f"Todas las API keys disponibles agotaron su cuota diaria para '{model}'. "
+        f"Detalle de la última: {last_error}"
+    )
 
 
 def _strip_code_fences(text: str) -> str:

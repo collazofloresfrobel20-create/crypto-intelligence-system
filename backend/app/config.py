@@ -18,11 +18,19 @@ def _int(name: str, default: int) -> int:
 
 class Settings:
     # --- Gemini ---
-    # Una sola API key para todo el proyecto: el key solo autentica contra la API,
-    # no hay beneficio en usar una key distinta por agente. Lo que sí importa es
-    # el rate limit del tier gratuito (compartido por key, no por "agente"), por
-    # eso el throttling en gemini_client.py serializa las llamadas.
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    # Cuota diaria gratuita confirmada en producción: 20 llamadas/día POR PROYECTO de Google
+    # Cloud (no por key — varias keys del mismo proyecto comparten la misma cuota). El cuello
+    # de botella real es el modelo "smart" (4 llamadas/token: bull/bear/mediador/juez) — con
+    # una sola key, ~5 tokens/día. Cada key adicional AQUÍ debe venir de un proyecto de Google
+    # Cloud DISTINTO (créalas en aistudio.google.com/apikey -> "Create API key in new project")
+    # para que cada una traiga su propia cuota independiente. gemini_client.py rota
+    # automáticamente a la siguiente key de esta lista cuando la actual se queda sin cuota del
+    # día, así que basta con llenarla y no tocar nada más. El modelo "fast" (7 analistas) no
+    # necesita esto: su cuota gratuita es mucho más alta y no se agotó ni una vez en pruebas.
+    GEMINI_SMART_API_KEYS = [
+        k.strip() for k in os.getenv("GEMINI_SMART_API_KEYS", "").split(",") if k.strip()
+    ]
     # OJO: NO usar los alias "-latest" (gemini-flash-latest / gemini-flash-lite-latest).
     # Comprobado en producción: ese alias apuntaba a gemini-3.7-flash (recién lanzado), cuyo
     # tier gratuito tenía una cuota de LANZAMIENTO de solo 20 solicitudes/día — no las ~1500/día

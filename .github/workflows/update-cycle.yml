@@ -29,6 +29,7 @@ jobs:
         working-directory: backend
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_SMART_API_KEYS: ${{ secrets.GEMINI_SMART_API_KEYS }}
           GEMINI_MODEL_FAST: gemini-3.5-flash-lite
           GEMINI_MODEL_SMART: gemini-3.5-flash
           GEMINI_ENABLE_SEARCH_GROUNDING: ${{ vars.GEMINI_ENABLE_SEARCH_GROUNDING }}
