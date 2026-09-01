@@ -98,15 +98,23 @@ cautela") mientras haya menos de 20 predicciones evaluadas. Con la actualizació
 activada, esto se resuelve solo con el tiempo — no hace falta que hagas nada, solo no confíes en el
 % de acierto hasta que ese aviso desaparezca.
 
-### 5. Presupuesto de Gemini (recomendación con datos reales, la decisión de gastar es tuya)
-Precios reales investigados: `gemini-3.5-flash-lite` (analistas) = **$0.30 / $2.50** por millón de
-tokens input/output; `gemini-3.5-flash` (debate/juez) = **$1.50 / $9.00** por millón. La combinación
-que ya usa el sistema (lite para los 7 analistas, el modelo completo solo para bull/bear/mediador/juez)
-ya es la más barata posible sin sacrificar el razonamiento donde más importa — no hay que cambiar el
-modelo, solo activar facturación si quieres subir `MAX_CANDIDATES_PER_RUN` por encima de lo que el
-tier gratuito permite (~15/actualización antes de toparte con cuota diaria). Con facturación
-activada, analizar bastantes más candidatos por ciclo cuesta centavos de dólar al día, no algo que
-deba preocuparte a esta escala.
+### 5. Presupuesto de Gemini: rotación de API keys gratuitas (implementado) o facturación
+Confirmado en producción: la cuota gratuita diaria del modelo smart (Bull/Bear/Mediador/Juez) es
+de **20 llamadas/día por proyecto de Google Cloud** (no por key — varias keys del mismo proyecto
+comparten la cuota). Cada token analizado gasta 4 de esas 20, así que 1 proyecto = ~5 tokens/día.
+
+En vez de pagar de entrada, implementé rotación automática de keys: `GEMINI_SMART_API_KEYS`
+acepta keys de proyectos de Google Cloud **distintos** (cada uno gratis), separadas por coma.
+`gemini_client.py` pasa a la siguiente automáticamente cuando la actual se agota por hoy. Con 3
+proyectos en total (el de `GEMINI_API_KEY` + 2 en `GEMINI_SMART_API_KEYS`) cubres los 15
+candidatos de `MAX_CANDIDATES_PER_RUN` sin gastar nada — verificado con una corrida real.
+
+Si en el futuro subes `MAX_CANDIDATES_PER_RUN` por encima de 15, necesitas más proyectos (uno
+extra por cada 5 candidatos adicionales), o activar facturación para dejar de administrar keys:
+precios reales investigados: `gemini-3.5-flash-lite` (analistas) = **$0.30 / $2.50** por millón de
+tokens input/output; `gemini-3.5-flash` (debate/juez) = **$1.50 / $9.00** por millón — la
+combinación que ya usa el sistema es la más barata posible sin sacrificar razonamiento. Con
+facturación, analizar muchos más candidatos por ciclo cuesta centavos de dólar al día.
 
 ### 6. Rate-limit de login (implementado)
 Antes de exponerlo a internet, un endpoint de login público sin límite de intentos es un riesgo real

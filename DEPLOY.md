@@ -39,15 +39,21 @@ Dámelos (o ponlos tú directamente en `backend/.env` como `TURSO_DATABASE_URL` 
 1. **(TÚ)** Crea un repo **privado** en https://github.com/new (nombre sugerido: `crypto-intelligence-system`). No lo inicialices con README (ya tenemos uno).
 2. **(TÚ)** Dame la URL del repo (o autentica git en esta máquina) y yo hago `git push`.
 3. **(TÚ)** En el repo → Settings → Secrets and variables → Actions → New repository secret, agrega:
-   - `GEMINI_API_KEY`
+   - `GEMINI_API_KEY` — key de tu primer proyecto de Google Cloud (ej. `cis-primary`).
+   - `GEMINI_SMART_API_KEYS` — keys de 2 proyectos de Google Cloud **adicionales y distintos**
+     (ej. `cis-smart-2`, `cis-smart-3`), separadas por coma sin espacios. La cuota gratuita
+     diaria del modelo smart (Bull/Bear/Mediador/Juez) es de solo 20 llamadas/día **por
+     proyecto** — con 3 proyectos en total cubres los 15 candidatos que analiza cada
+     actualización. `gemini_client.py` rota automáticamente entre ellas.
    - `TURSO_DATABASE_URL`
    - `TURSO_AUTH_TOKEN`
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
    - `GOPLUS_APP_KEY` / `GOPLUS_APP_SECRET` (opcionales, déjalos vacíos si no los usas)
-4. **(TÚ)** Crea un **Personal Access Token** (classic, con scope `repo`) en
+4. **(TÚ)** Crea un **Personal Access Token** (classic, con scopes `repo` **y `workflow`**) en
    https://github.com/settings/tokens — lo necesita el Worker para poder disparar el workflow
-   desde el botón "Actualizar sistema". Guárdalo, lo usamos en el paso 3.
+   desde el botón "Actualizar sistema" (y a mí me hace falta `workflow` para poder subir
+   cambios al archivo `.github/workflows/update-cycle.yml`). Guárdalo, lo usamos en el paso 3.
 
 Con esto, el workflow en [`.github/workflows/update-cycle.yml`](.github/workflows/update-cycle.yml)
 ya queda corriendo solo cada 12h en cuanto el código esté en el repo.
