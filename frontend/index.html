@@ -135,6 +135,20 @@
   .pill-inline { display: inline-block; background: var(--border); color: var(--ink-soft); font-size: 10.5px; padding: 3px 9px; border-radius: 10px; margin: 2px 5px 2px 0; }
 
   .empty-state { padding: 30px 0; color: var(--faint); font-size: 13px; }
+
+  .radar-row { display: flex; gap: 18px; align-items: center; margin: 4px 0 6px; }
+  .radar-row svg { flex-shrink: 0; }
+  .radar-row .radar-caption { font-size: 11px; color: var(--muted); line-height: 1.6; }
+
+  .timeline-wrap { margin: 10px 0 4px; }
+  .timeline-wrap svg { width: 100%; height: auto; display: block; }
+  .timeline-caption { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .pipeline-row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; margin: 4px 0; }
+  .pipeline-svg-wrap { flex: 0 0 260px; }
+  .pipeline-diagram { width: 100%; max-width: 260px; height: auto; display: block; }
+  .pipeline-box-lbl { font-size: 8.5px; font-weight: 600; fill: var(--ink); }
+  .pipeline-legend { flex: 1 1 280px; min-width: 240px; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -189,6 +203,21 @@
     <section class="block">
       <h2>Estado general</h2>
       <div class="numbers-row" id="summaryStats"></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Cómo piensa el sistema</h2>
+      <p class="desc">
+        Cada token que llega a "Oportunidades" pasó por este proceso completo: 7 analistas
+        independientes investigan en paralelo, un agente construye el caso alcista y otro intenta
+        destruirlo con evidencia, un mediador decide qué sobrevive al debate, y un juez final
+        calcula los 5 scores y el veredicto. El horizonte de 7 días no es arbitrario: cada ciclo
+        vuelve a revisar qué pasó realmente con el precio y alimenta esa evidencia de vuelta al
+        sistema (ver pestaña Historial).
+      </p>
+      <div id="pipelineDiagram"></div>
     </section>
   </section>
 
@@ -320,6 +349,130 @@ const VERDICT_CLASS = {
   "Insufficient Evidence": "v-insufficient",
 };
 
+// ---------- Gráficos SVG (sin librerías externas) ----------
+
+function radarSvg(p) {
+  const axes = [
+    { label: "Opportunity", value: p.opportunity_score },
+    { label: "Risk", value: p.risk_score },
+    { label: "Confidence", value: p.confidence_score },
+    { label: "Earliness", value: p.earliness_score },
+  ];
+  const cx = 66, cy = 62, r = 46;
+  const n = axes.length;
+  const angle = (i) => -Math.PI / 2 + i * (2 * Math.PI / n);
+  const pt = (i, frac) => [cx + r * frac * Math.cos(angle(i)), cy + r * frac * Math.sin(angle(i))];
+
+  const rings = [0.25, 0.5, 0.75, 1].map((frac) => {
+    const pts = axes.map((_, i) => pt(i, frac).join(",")).join(" ");
+    return `<polygon points="${pts}" fill="none" stroke="var(--border-strong)" stroke-width="1"/>`;
+  }).join("");
+
+  const axisLines = axes.map((_, i) => {
+    const [x, y] = pt(i, 1);
+    return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--border-strong)" stroke-width="1"/>`;
+  }).join("");
+
+  const dataPts = axes.map((a, i) => {
+    const v = Math.max(0, Math.min(100, a.value ?? 0));
+    return pt(i, v / 100).join(",");
+  }).join(" ");
+
+  const labels = axes.map((a, i) => {
+    const [x, y] = pt(i, 1.3);
+    const c = Math.cos(angle(i));
+    const anchor = Math.abs(c) < 0.25 ? "middle" : (c > 0 ? "start" : "end");
+    return `<text x="${x}" y="${y}" font-size="8.5" fill="var(--muted)" text-anchor="${anchor}" dominant-baseline="middle">${a.label}</text>`;
+  }).join("");
+
+  return `<svg viewBox="0 0 132 124" width="132" height="124">
+    ${rings}${axisLines}
+    <polygon points="${dataPts}" fill="rgba(17,17,17,0.10)" stroke="var(--ink)" stroke-width="1.5"/>
+    ${labels}
+  </svg>`;
+}
+
+function horizonTimelineSvg(p) {
+  const horizonHours = (p.horizon_days || 7) * 24;
+  const returnPct = p.return_pct ?? 0;
+  const maxReturnPct = p.max_return_pct ?? returnPct;
+  const drawdownPct = Math.min(p.max_drawdown_pct ?? 0, 0);
+  const timeToMax = Math.min(Math.max(p.time_to_max_hours ?? 0, 0), horizonHours);
+
+  const scaleMax = Math.max(maxReturnPct, 32);
+  const scaleMin = Math.min(drawdownPct, -3);
+  const range = scaleMax - scaleMin || 1;
+  const yFor = (pct) => 58 - ((pct - scaleMin) / range) * 46;
+  const xFor = (h) => 8 + (h / horizonHours) * 284;
+
+  const targetY30 = yFor(30), targetY20 = yFor(20);
+  const dayTicks = Array.from({ length: 8 }, (_, d) => {
+    const x = xFor(d * 24);
+    return `<line x1="${x}" y1="58" x2="${x}" y2="61" stroke="var(--border-strong)"/>`;
+  }).join("");
+
+  const pts = [[0, 0], [timeToMax, maxReturnPct], [horizonHours, returnPct]]
+    .map(([h, pct]) => `${xFor(h)},${yFor(pct)}`).join(" ");
+
+  return `<svg viewBox="0 0 300 68" preserveAspectRatio="xMinYMin meet">
+    <rect x="8" y="${Math.min(targetY30, targetY20)}" width="284" height="${Math.max(Math.abs(targetY20 - targetY30), 1)}" fill="rgba(17,17,17,0.07)"/>
+    <line x1="8" y1="${yFor(0)}" x2="292" y2="${yFor(0)}" stroke="var(--border-strong)" stroke-dasharray="2,2"/>
+    ${dayTicks}
+    <polyline points="${pts}" fill="none" stroke="var(--ink)" stroke-width="1.6"/>
+    <circle cx="${xFor(timeToMax)}" cy="${yFor(maxReturnPct)}" r="2.5" fill="var(--ink)"/>
+    <circle cx="${xFor(horizonHours)}" cy="${yFor(returnPct)}" r="2.5" fill="var(--ink)"/>
+    <text x="8" y="9" font-size="8" fill="var(--muted)">objetivo +20&ndash;30%</text>
+    <text x="292" y="9" font-size="8" fill="var(--muted)" text-anchor="end">día ${p.horizon_days || 7}</text>
+  </svg>`;
+}
+
+// SVG chico a proposito (una version anterior mas grande hacia fallar la captura de
+// pantalla en algunos entornos) -- las descripciones largas van en HTML aparte, no en el SVG.
+const PIPELINE_STAGES = [
+  ["Descubrimiento", "Universo de tokens en Binance Alpha"],
+  ["Filtros duros", "Liquidez · volumen · market cap · holders · antigüedad"],
+  ["7 analistas en paralelo", "Fundamental · Tokenomics · On-chain · Market · Narrativa · Seguridad · Social"],
+  ["Bull vs Bear", "Tesis alcista construida y luego atacada con la misma evidencia"],
+  ["Mediador", "¿Qué argumento sobrevive al debate?"],
+  ["Juez", "5 scores independientes + veredicto"],
+  ["+7 días después", "Se revisa el precio real y retroalimenta la auto-corrección"],
+];
+
+function renderPipelineDiagram() {
+  const boxH = 20, gap = 7, w = 280;
+  const n = PIPELINE_STAGES.length;
+  const totalH = n * boxH + (n - 1) * gap;
+  const boxes = PIPELINE_STAGES.map(([title], i) => {
+    const y = i * (boxH + gap);
+    const arrow = i < n - 1
+      ? `<line x1="${w/2}" y1="${y + boxH}" x2="${w/2}" y2="${y + boxH + gap}" stroke="var(--border-strong)" stroke-width="1.5" marker-end="url(#arrowhead)"/>`
+      : "";
+    return `
+      <rect x="4" y="${y}" width="${w - 8}" height="${boxH}" rx="5" fill="var(--surface)" stroke="var(--border-strong)"/>
+      <text x="${w/2}" y="${y + boxH/2 + 3.5}" text-anchor="middle" class="pipeline-box-lbl">${title}</text>
+      ${arrow}
+    `;
+  }).join("");
+
+  const svg = `<svg class="pipeline-diagram" viewBox="0 0 ${w} ${totalH}" preserveAspectRatio="xMidYMin meet">
+    <defs>
+      <marker id="arrowhead" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
+        <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--border-strong)"/>
+      </marker>
+    </defs>
+    ${boxes}
+  </svg>`;
+
+  const legend = PIPELINE_STAGES.map(([title, sub]) => `<li><strong>${title}</strong> &mdash; ${sub}</li>`).join("");
+
+  return `
+    <div class="pipeline-row">
+      <div class="pipeline-svg-wrap">${svg}</div>
+      <ul class="compact pipeline-legend">${legend}</ul>
+    </div>
+  `;
+}
+
 function renderPredictions(preds) {
   const el = $("predictions");
   if (!preds.length) { el.innerHTML = '<div class="empty-state">Sin resultados todavía.</div>'; return; }
@@ -339,6 +492,10 @@ function renderPredictions(preds) {
         <div class="score-item"><div class="val">${p.confidence_score ?? "-"}</div><div class="lbl">Confidence</div></div>
         <div class="score-item"><div class="val">${p.earliness_score ?? "-"}</div><div class="lbl">Earliness</div></div>
       </div>
+      <div class="radar-row">
+        ${radarSvg(p)}
+        <div class="radar-caption">Forma de la oportunidad: entre más grande y pareja la figura, más fuerte y equilibrada la señal en las 4 dimensiones independientes.</div>
+      </div>
       <div class="section-title">Bull case</div>
       <div class="text-block">${p.bull_case || "-"}</div>
       <div class="section-title">Bear case</div>
@@ -347,7 +504,11 @@ function renderPredictions(preds) {
       ${risks.length ? `<div class="section-title">Riesgos principales</div><ul class="compact">${risks.map(r=>`<li>${r}</li>`).join("")}</ul>` : ""}
       <div class="section-title">Nota del sistema</div>
       <div class="text-block">${p.system_note || "-"}</div>
-      ${p.status === 'evaluated' ? `<div class="section-title">Resultado real</div><div class="text-block">Retorno máximo: ${p.max_return_pct}% &middot; Drawdown: ${p.max_drawdown_pct}% &middot; Tesis: ${p.thesis_result}</div>` : `<div class="section-title">Estado</div><div class="text-block faint">Pendiente de evaluar (horizonte ${p.horizon_days} días)</div>`}
+      ${p.status === 'evaluated' ? `
+        <div class="section-title">Resultado real en el horizonte de ${p.horizon_days} días</div>
+        <div class="timeline-wrap">${horizonTimelineSvg(p)}</div>
+        <div class="timeline-caption">Retorno máximo: ${p.max_return_pct}% &middot; Drawdown: ${p.max_drawdown_pct}% &middot; Retorno al día ${p.horizon_days}: ${p.return_pct}% &middot; Tesis: ${p.thesis_result}</div>
+      ` : `<div class="section-title">Estado</div><div class="text-block faint">Pendiente de evaluar (horizonte ${p.horizon_days} días)</div>`}
     </div>`;
   }).join("");
 }
@@ -404,20 +565,36 @@ async function refreshSummary() {
   ].join("");
 }
 
+// Nota: este frontend local también sirve tal cual desde el Worker de Cloudflare (donde
+// /api/update dispara GitHub Actions en vez de correr el pipeline in-process). El polling
+// genérico de abajo funciona igual en ambos casos.
 $("btnUpdate").onclick = async () => {
   $("btnUpdate").disabled = true;
   $("runStatus").textContent = "Lanzando actualización...";
-  let run_id;
+  const before = await api("/api/runs").catch(() => []);
+  const beforeIds = new Set(before.map((r) => r.id));
+
   try {
-    ({ run_id } = await api("/api/update", { method: "POST" }));
+    await api("/api/update", { method: "POST" });
   } catch (e) {
     $("runStatus").textContent = e.message;
     $("btnUpdate").disabled = false;
     return;
   }
+
+  $("runStatus").textContent = "Esperando a que arranque (puede tardar 1-2 min)...";
   $("log").style.display = "block";
+  $("log").textContent = "";
+
+  let currentRunId = null;
   const poll = setInterval(async () => {
-    const run = await api(`/api/runs/${run_id}`);
+    if (!currentRunId) {
+      const runs = await api("/api/runs").catch(() => []);
+      const fresh = runs.find((r) => !beforeIds.has(r.id));
+      if (!fresh) return;  // aun no aparece, seguir esperando
+      currentRunId = fresh.id;
+    }
+    const run = await api(`/api/runs/${currentRunId}`);
     const log = JSON.parse(run.log || "[]");
     $("log").textContent = log.join("\n");
     $("log").scrollTop = $("log").scrollHeight;
@@ -433,7 +610,7 @@ $("btnUpdate").onclick = async () => {
       renderHistory(await api("/api/history/overview").catch(() => null));
       loadDiagnosis();
     }
-  }, 3000);
+  }, 5000);
 };
 
 function renderStats(s) {
@@ -572,9 +749,8 @@ async function loadConfig() {
     <tr><td>Modelo analistas</td><td>${cfg.GEMINI_MODEL_FAST}</td></tr>
     <tr><td>Modelo debate/juez</td><td>${cfg.GEMINI_MODEL_SMART}</td></tr>
     <tr><td>Búsqueda web (grounding)</td><td>${cfg.GEMINI_ENABLE_SEARCH_GROUNDING ? "activada" : "desactivada (requiere facturación en Google Cloud)"}</td></tr>
-    <tr><td>API key de Gemini</td><td>${cfg.gemini_api_key_configured ? "configurada" : "falta"}</td></tr>
-    <tr><td>Actualización automática</td><td>${cfg.AUTO_UPDATE_ENABLED ? `activada, cada ${cfg.AUTO_UPDATE_INTERVAL_HOURS}h` : "desactivada"}</td></tr>
-    <tr><td>Alertas de Telegram</td><td>${cfg.telegram_configured ? "configuradas" : "no configuradas"}</td></tr>
+    <tr><td>Actualización automática</td><td>cron de GitHub Actions cada 12h (ver .github/workflows/update-cycle.yml)</td></tr>
+    <tr><td>API key de Gemini / Telegram</td><td>configuradas como secretos en GitHub Actions, no visibles desde aquí</td></tr>
     <tr><td>Bloqueo de login</td><td>${cfg.LOGIN_MAX_ATTEMPTS} intentos fallidos &rarr; ${cfg.LOGIN_LOCKOUT_MINUTES} min de bloqueo</td></tr>
   `;
 }
@@ -595,6 +771,7 @@ $("btnSaveConfig").onclick = async () => {
 
 (async () => {
   $("sessionUser").textContent = "";
+  $("pipelineDiagram").innerHTML = renderPipelineDiagram();
   refreshPredictions();
   refreshDiscarded();
   refreshSummary();
