@@ -178,7 +178,7 @@
 
 <nav class="tabs">
   <button class="tab-btn active" data-view="resumen">Resumen</button>
-  <button class="tab-btn" data-view="oportunidades">Oportunidades</button>
+  <button class="tab-btn" data-view="oportunidades">Candidatos</button>
   <button class="tab-btn" data-view="descartados">Descartados</button>
   <button class="tab-btn" data-view="historial">Historial</button>
   <button class="tab-btn" data-view="autocorreccion">Auto-corrección</button>
@@ -226,7 +226,7 @@
     <section class="block">
       <h2>Cómo piensa el sistema</h2>
       <p class="desc">
-        Cada token que llega a "Oportunidades" pasó por este proceso completo: 7 analistas
+        Cada token que llega a "Candidatos" pasó por este proceso completo: 7 analistas
         independientes investigan en paralelo, un agente construye el caso alcista y otro intenta
         destruirlo con evidencia, un mediador decide qué sobrevive al debate, y un juez final
         calcula los 5 scores y el veredicto. El horizonte de 7 días no es arbitrario: cada ciclo
@@ -734,7 +734,7 @@ async function refreshSummary() {
   const realOpportunitiesActive = activeNow.filter(p => p.verdict === "Strong Opportunity" || p.verdict === "Watchlist").length;
 
   $("summaryHeadline").innerHTML = realOpportunitiesActive > 0
-    ? `<strong>${realOpportunitiesActive}</strong> oportunidad(es) real(es) activa(s) ahora mismo (Strong Opportunity + Watchlist, dentro de su horizonte de 7 días) &mdash; revísalas en la pestaña Oportunidades filtrando por "Activo ahora".`
+    ? `<strong>${realOpportunitiesActive}</strong> oportunidad(es) real(es) activa(s) ahora mismo (Strong Opportunity + Watchlist, dentro de su horizonte de 7 días) &mdash; revísalas en la pestaña Candidatos filtrando por "Activo ahora".`
     : `Ninguna oportunidad fuerte activa ahora mismo (0 Strong Opportunity, 0 Watchlist en toda la historia del sistema: ${analyzed.length} analizados desde que arrancó) &mdash; el sistema sigue analizando y descartando, no fuerza veredictos optimistas cuando la evidencia no alcanza.`;
 
   $("summaryStats").innerHTML = VERDICT_ORDER.map(v => numItem(byVerdict[v] || 0, v)).join("");
