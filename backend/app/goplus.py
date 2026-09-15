@@ -4,9 +4,14 @@ funciona sin autenticación para uso ligero/gratuito; si se configuran
 GOPLUS_APP_KEY/GOPLUS_APP_SECRET en el futuro se pueden usar para subir el rate limit
 (no implementado: no es necesario para el MVP).
 """
+import time
+
 import requests
 
 BASE_URL = "https://api.gopluslabs.io/api/v1"
+MAX_RETRIES = 3  # encontrado en producción: sin reintento, un solo timeout/blip transitorio
+                  # pierde para siempre la evidencia Tier 1 del Security Analyst para ese token
+                  # -- confirmado manualmente que la API sí tenía el dato, solo la llamada falló.
 
 # Mapeo de chainName (tal como viene de Binance Alpha) a chain_id de GoPlus.
 CHAIN_ID_MAP = {
@@ -35,23 +40,25 @@ def get_token_security(chain_name: str, contract_address: str) -> dict | None:
         return None
     chain_key = (chain_name or "").lower()
 
-    try:
-        if chain_key == "solana":
-            url = f"{BASE_URL}/solana/token_security"
-            params = {"contract_addresses": contract_address}
-        else:
-            chain_id = CHAIN_ID_MAP.get(chain_key)
-            if not chain_id:
-                return None
-            url = f"{BASE_URL}/token_security/{chain_id}"
-            params = {"contract_addresses": contract_address}
+    if chain_key == "solana":
+        url = f"{BASE_URL}/solana/token_security"
+    else:
+        chain_id = CHAIN_ID_MAP.get(chain_key)
+        if not chain_id:
+            return None
+        url = f"{BASE_URL}/token_security/{chain_id}"
+    params = {"contract_addresses": contract_address}
 
-        resp = _session.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-        payload = resp.json()
-        result = payload.get("result") or {}
-        # La respuesta indexa por dirección en minúsculas.
-        data = result.get(contract_address.lower()) or (list(result.values())[0] if result else None)
-        return data
-    except Exception:
-        return None
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = _session.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            payload = resp.json()
+            result = payload.get("result") or {}
+            # La respuesta indexa por dirección en minúsculas.
+            data = result.get(contract_address.lower()) or (list(result.values())[0] if result else None)
+            return data
+        except Exception:
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(2 * (attempt + 1))
+    return None

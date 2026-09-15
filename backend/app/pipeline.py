@@ -84,13 +84,16 @@ def build_context(token: dict, market_stats: dict, goplus_report: dict | None, h
     return json.dumps(context, ensure_ascii=False, default=str)
 
 
-def research_token(token: dict) -> dict:
+def research_token(token: dict, run_id: str | None = None) -> dict:
     """Ejecuta research+debate+juez para un token. Devuelve el dict listo para guardar (category='analyzed')."""
     symbol = token.get("symbol")
     alpha_id = token.get("alphaId")
 
     market_stats = compute_market_stats(alpha_id) if alpha_id else {"error": "sin alphaId"}
     security_report = goplus.get_token_security(token.get("chainName"), token.get("contractAddress"))
+    if security_report is None and run_id:
+        _append_log(run_id, f"  aviso: sin reporte de GoPlus para {symbol} tras reintentos "
+                              "(el Security Analyst queda sin su evidencia Tier 1 principal).")
     holder_history = get_holder_history(symbol)
 
     context = build_context(token, market_stats, security_report, holder_history)
@@ -294,7 +297,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
             symbol = token.get("symbol")
             _append_log(run_id, f"[{i}/{len(candidates)}] Investigando {symbol}...")
             try:
-                data = research_token(token)
+                data = research_token(token, run_id=run_id)
                 _save_entry(run_id, data)
                 _append_log(run_id, f"[{i}/{len(candidates)}] {symbol}: veredicto = {data.get('verdict')}")
                 try:
