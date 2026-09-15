@@ -77,6 +77,13 @@ def judge_agent(
             "VÁLIDO como Strong Opportunity, úsalo cuando corresponda). Regla dura: si "
             f"confidence_score < {settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY}, el veredicto "
             "NO puede ser 'Strong Opportunity'. "
+            "Además, redacta 'project_explainer': 1-2 oraciones en español simple, SIN jerga "
+            "técnica ni de cripto, que expliquen qué ES este proyecto y qué problema dice "
+            "resolver -- como se lo explicarías a alguien que nunca ha usado cripto. Basado en "
+            "los hallazgos de los analistas, no en tu opinión. Esto es pura descripción neutral "
+            "(qué es), no una evaluación de si es bueno o malo -- eso ya lo cubren el veredicto "
+            "y los demás campos. Si los analistas no encontraron información suficiente para "
+            "explicar qué hace el proyecto, dilo explícitamente en vez de inventar. "
             "Horizonte objetivo: ~7 días, movimiento buscado +20-30% (nunca prometido). "
             + _JSON_RULE
         ),

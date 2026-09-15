@@ -73,6 +73,7 @@ JUDGE_SCHEMA = {
         "key_evidence": {"type": "array", "items": {"type": "string"}},
         "main_risks": {"type": "array", "items": {"type": "string"}},
         "system_note": {"type": "string"},
+        "project_explainer": {"type": "string"},
     },
     "required": [
         "opportunity_score",
@@ -86,6 +87,7 @@ JUDGE_SCHEMA = {
         "key_evidence",
         "main_risks",
         "system_note",
+        "project_explainer",
     ],
 }
 

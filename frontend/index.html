@@ -137,6 +137,8 @@
   table td { padding: 12px 10px 12px 0; border-bottom: 1px solid var(--border); color: var(--ink-soft); }
   table tr:last-child td { border-bottom: none; }
   .table-wrap { overflow-x: auto; }
+  .ranking-table tbody tr:hover { background: var(--surface); }
+  .ranking-table th:hover { color: var(--ink-soft); }
 
   .muted { color: var(--muted); font-size: 12.5px; }
   .faint { color: var(--faint); }
@@ -167,6 +169,10 @@
   .radar-row .radar-caption { font-size: 11px; color: var(--muted); line-height: 1.6; }
 
   .card-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+  /* Explicación simple de qué es el proyecto, antes de los scores/riesgo -- orienta primero,
+     evalúa después. */
+  .project-explainer { font-size: 14px; line-height: 1.6; color: var(--ink-soft); max-width: 68ch; margin: 2px 0 0; }
 
   .timeline-wrap { margin: 10px 0 4px; }
   .timeline-wrap svg { width: 100%; height: auto; display: block; }
@@ -267,16 +273,22 @@
     <section class="block">
       <h2>Candidatos analizados</h2>
       <p class="desc">
-        Todo lo que pasó los filtros duros y completó el pipeline de investigación y debate &mdash;
-        no todos son oportunidades reales, la mayoría termina en "High Risk" o "Insufficient
-        Evidence" a propósito (ver disclaimer en Resumen). "Activo ahora" = todavía dentro de su
-        horizonte de 7 días; "Cerrado" = ya se evaluó contra precio real; "Sin datos" = no se pudo
-        conseguir su precio (típicamente ya no listado en Binance Alpha).
+        Por defecto solo ves lo <strong>activo ahora</strong> (todavía dentro de su horizonte de
+        7 días) &mdash; no todos son oportunidades reales, la mayoría termina en "High Risk" o
+        "Insufficient Evidence" a propósito (ver disclaimer en Resumen). Cambia el filtro de
+        Estado para ver el historial: "Cerrado" = ya se evaluó contra precio real; "Sin datos" =
+        no se pudo conseguir su precio (típicamente ya no listado en Binance Alpha).
       </p>
       <div class="section-title">Estado</div>
       <div class="row" id="statusFilters" style="margin-bottom:10px;"></div>
       <div class="section-title">Veredicto</div>
       <div class="row" id="verdictFilters"></div>
+
+      <div class="section-title" style="margin-top:26px;">Ranking (de lo que ves arriba filtrado)</div>
+      <p class="desc" style="margin-bottom:10px;">Ordena por cualquier score para comparar candidatos de un vistazo. Clic en una fila para saltar a esa tarjeta.</p>
+      <div id="rankingTable"></div>
+
+      <div class="section-title" style="margin-top:26px;">Detalle completo</div>
       <div id="predictions" class="cards"><div class="empty-state">Aún no hay predicciones. Ejecuta una actualización desde Resumen.</div></div>
     </section>
   </section>
@@ -597,7 +609,7 @@ function renderPredictions(preds) {
     const evidence = Array.isArray(p.key_evidence) ? p.key_evidence : [];
     const risks = Array.isArray(p.main_risks) ? p.main_risks : [];
     return `
-    <div class="card">
+    <div class="card" id="card-${p.id}">
       <div class="card-head">
         <div><span class="sym">${p.symbol || "?"}</span><span class="name">${p.name || ""}</span></div>
         <div class="card-head-right">
@@ -605,6 +617,7 @@ function renderPredictions(preds) {
           ${statusPill(p)}
         </div>
       </div>
+      ${p.project_explainer ? `<p class="project-explainer">${p.project_explainer}</p>` : ""}
       <div class="scores">
         <div class="score-item"><div class="val">${p.opportunity_score ?? "-"}</div><div class="lbl">Opportunity</div></div>
         <div class="score-item"><div class="val">${p.risk_score ?? "-"}</div><div class="lbl">Risk</div></div>
@@ -676,7 +689,7 @@ const STATUS_OPTIONS = [
 
 let allPredictions = [];
 let verdictFilter = null;  // null = todos
-let statusFilter = null;   // null = todos
+let statusFilter = "active";   // por defecto solo lo vigente -- "Todos" mezcla 13 días de historial cerrado
 
 function isActive(p) {
   if (p.status !== "pending") return false;
@@ -692,6 +705,12 @@ function matchesStatus(p, sf) {
 
 function applyFilters(list) {
   return list.filter(p => (!verdictFilter || p.verdict === verdictFilter) && matchesStatus(p, statusFilter));
+}
+
+function renderFiltered() {
+  const filtered = applyFilters(allPredictions);
+  renderRanking(filtered);
+  renderPredictions(filtered);
 }
 
 function pillBtn(label, active, dataAttr) {
@@ -714,7 +733,7 @@ function renderStatusFilters() {
       statusFilter = btn.dataset.v || null;
       renderStatusFilters();
       renderVerdictFilters();
-      renderPredictions(applyFilters(allPredictions));
+      renderFiltered();
     };
   });
 }
@@ -732,7 +751,63 @@ function renderVerdictFilters() {
       verdictFilter = btn.dataset.v || null;
       renderStatusFilters();
       renderVerdictFilters();
-      renderPredictions(applyFilters(allPredictions));
+      renderFiltered();
+    };
+  });
+}
+
+const RANK_SORT_OPTIONS = [
+  ["opportunity_score", "Opportunity"],
+  ["risk_score", "Risk"],
+  ["confidence_score", "Confidence"],
+  ["earliness_score", "Earliness"],
+];
+let rankSort = { key: "opportunity_score", dir: "desc" };
+
+function renderRanking(list) {
+  const box = $("rankingTable");
+  if (!list.length) { box.innerHTML = '<div class="empty-state">Nada que rankear con este filtro.</div>'; return; }
+  const sorted = [...list].sort((a, b) => {
+    const av = a[rankSort.key] ?? -1, bv = b[rankSort.key] ?? -1;
+    return rankSort.dir === "desc" ? bv - av : av - bv;
+  });
+  const headerCell = (key, label) => {
+    const isActive = rankSort.key === key;
+    const arrow = isActive ? (rankSort.dir === "desc" ? " ↓" : " ↑") : "";
+    return `<th data-sort="${key}" style="cursor:pointer;${isActive ? 'color:var(--ink);' : ''}">${label}${arrow}</th>`;
+  };
+  box.innerHTML = `<div class="table-wrap"><table class="ranking-table">
+    <thead><tr>
+      <th>#</th><th>Símbolo</th><th>Veredicto</th>
+      ${RANK_SORT_OPTIONS.map(([k, l]) => headerCell(k, l)).join("")}
+      <th>Estado</th>
+    </tr></thead>
+    <tbody>
+      ${sorted.map((p, i) => `
+        <tr data-goto="card-${p.id}">
+          <td class="faint">${i + 1}</td>
+          <td><strong>${p.symbol || "?"}</strong></td>
+          <td>${p.verdict || "N/A"}</td>
+          <td>${p.opportunity_score ?? "-"}</td>
+          <td>${p.risk_score ?? "-"}</td>
+          <td>${p.confidence_score ?? "-"}</td>
+          <td>${p.earliness_score ?? "-"}</td>
+          <td>${p.status === "evaluated" ? (p.thesis_result === "yes" ? "Sí llegó" : p.thesis_result === "partial" ? "Se acercó" : "No llegó") : p.status === "unevaluable" ? "Sin datos" : "Activo"}</td>
+        </tr>`).join("")}
+    </tbody>
+  </table></div>`;
+  box.querySelectorAll("th[data-sort]").forEach(th => {
+    th.onclick = () => {
+      const key = th.dataset.sort;
+      rankSort = rankSort.key === key ? { key, dir: rankSort.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" };
+      renderRanking(list);
+    };
+  });
+  box.querySelectorAll("tr[data-goto]").forEach(tr => {
+    tr.style.cursor = "pointer";
+    tr.onclick = () => {
+      const target = document.getElementById(tr.dataset.goto);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
     };
   });
 }
@@ -742,7 +817,7 @@ async function refreshPredictions() {
   allPredictions = preds;
   renderStatusFilters();
   renderVerdictFilters();
-  renderPredictions(applyFilters(preds));
+  renderFiltered();
   return preds;
 }
 

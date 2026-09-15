@@ -143,6 +143,7 @@ def research_token(token: dict, run_id: str | None = None) -> dict:
         "key_evidence": json.dumps(verdict.get("key_evidence", []), ensure_ascii=False),
         "main_risks": json.dumps(verdict.get("main_risks", []), ensure_ascii=False),
         "system_note": verdict.get("system_note"),
+        "project_explainer": verdict.get("project_explainer"),
         "agent_findings": json.dumps(
             {"analysts": findings, "bull": bull, "bear": bear, "mediator": mediator},
             ensure_ascii=False,
@@ -171,6 +172,7 @@ def discarded_entry(token: dict, reasons: list[str]) -> dict:
         "earliness_score": None, "evidence_tier": None, "verdict": "Discarded (hard filter)",
         "bull_case": None, "bear_case": None, "mediator_notes": None,
         "key_evidence": None, "main_risks": None, "system_note": None, "agent_findings": None,
+        "project_explainer": None,
         "horizon_days": settings.PREDICTION_HORIZON_DAYS,
     }
 
@@ -184,9 +186,9 @@ def _save_entry(run_id: str, data: dict):
                 price_at_prediction, market_cap, liquidity, volume_24h, holders, rejection_reasons,
                 opportunity_score, risk_score, confidence_score, earliness_score,
                 evidence_tier, verdict, bull_case, bear_case, mediator_notes,
-                key_evidence, main_risks, system_note, agent_findings, horizon_days,
+                key_evidence, main_risks, system_note, project_explainer, agent_findings, horizon_days,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -197,7 +199,7 @@ def _save_entry(run_id: str, data: dict):
                 data["earliness_score"], data["evidence_tier"], data["verdict"],
                 data["bull_case"], data["bear_case"], data["mediator_notes"],
                 data["key_evidence"], data["main_risks"], data["system_note"],
-                data["agent_findings"], data["horizon_days"], _now(),
+                data["project_explainer"], data["agent_findings"], data["horizon_days"], _now(),
             ),
         )
 

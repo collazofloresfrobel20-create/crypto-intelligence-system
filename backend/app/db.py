@@ -127,6 +127,7 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN current_price REAL",
     "ALTER TABLE predictions ADD COLUMN current_return_pct REAL",
     "ALTER TABLE predictions ADD COLUMN price_checked_at TEXT",
+    "ALTER TABLE predictions ADD COLUMN project_explainer TEXT",
 ]
 
 
