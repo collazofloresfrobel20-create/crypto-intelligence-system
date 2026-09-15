@@ -153,7 +153,8 @@ def get_prediction(prediction_id: int):
 @app.post("/api/backtest/evaluate")
 def trigger_evaluation():
     count = backtesting.evaluate_due_predictions()
-    return {"newly_evaluated": count}
+    marked = backtesting.update_current_marks()
+    return {"newly_evaluated": count, "marked_to_market": marked}
 
 
 @app.get("/api/backtest/stats")

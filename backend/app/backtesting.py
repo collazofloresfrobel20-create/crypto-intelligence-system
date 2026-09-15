@@ -114,6 +114,42 @@ def evaluate_due_predictions() -> int:
     return evaluated
 
 
+def update_current_marks() -> int:
+    """'Mark-to-market' de las entradas 'pending' cuyo horizonte AÚN no vence: usa el mismo
+    historial de klines que evaluate_prediction() para guardar el precio actual y el % de
+    retorno desde el análisis. Le da visibilidad de rendimiento real antes del día 7 (lo que ya
+    se muestra post-evaluación, a mitad de camino) sin ser una señal de entrada/salida -- es
+    puro dato observado, igual que max_return_pct/return_pct tras la evaluación final."""
+    with get_conn() as conn:
+        rows = [row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM predictions WHERE status = 'pending'"
+        ).fetchall()]
+
+    marked = 0
+    for pred in rows:
+        if _hours_since(pred["created_at"]) >= pred["horizon_days"] * 24:
+            continue  # ya vencido: lo toma evaluate_due_predictions()
+        alpha_id = pred.get("alpha_id")
+        entry_price = pred.get("price_at_prediction")
+        if not alpha_id or not entry_price:
+            continue
+        path = _price_path_since(alpha_id, pred["created_at"])
+        if not path:
+            continue
+        current_price = path[-1][1]
+        current_return_pct = ((current_price - entry_price) / entry_price) * 100
+        with get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE predictions SET current_price = ?, current_return_pct = ?, price_checked_at = ?
+                WHERE id = ?
+                """,
+                (current_price, round(current_return_pct, 2), datetime.now(timezone.utc).isoformat(), pred["id"]),
+            )
+        marked += 1
+    return marked
+
+
 def _confidence_bucket(score: int | None) -> str:
     if score is None:
         return "desconocido"

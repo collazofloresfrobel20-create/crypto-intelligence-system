@@ -275,6 +275,9 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         evaluated = backtesting.evaluate_due_predictions()
         _append_log(run_id, f"{evaluated} entradas (analizadas + descartadas) evaluadas contra precio real.")
 
+        marked = backtesting.update_current_marks()
+        _append_log(run_id, f"{marked} entradas pendientes actualizadas con su precio/retorno actual (mark-to-market).")
+
         if evaluated > 0:
             from . import diagnosis
             try:

@@ -120,6 +120,15 @@ CREATE TABLE IF NOT EXISTS system_config (
 
 _SCHEMA_STATEMENTS = [s.strip() for s in SCHEMA.split(";") if s.strip()]
 
+# Migraciones aditivas simples (ALTER TABLE ADD COLUMN). SQLite/libSQL no soportan
+# "ADD COLUMN IF NOT EXISTS", así que cada una se ejecuta suelta y se ignora si la columna ya
+# existe -- permite correr init_db() en cada arranque sin mantener un historial de migraciones.
+_MIGRATIONS = [
+    "ALTER TABLE predictions ADD COLUMN current_price REAL",
+    "ALTER TABLE predictions ADD COLUMN current_return_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN price_checked_at TEXT",
+]
+
 
 if TURSO_DATABASE_URL:
     import libsql_client
@@ -183,6 +192,12 @@ else:
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+    for stmt in _MIGRATIONS:
+        try:
+            with get_conn() as conn:
+                conn.execute(stmt)
+        except Exception:
+            pass  # columna ya existe
 
 
 def row_to_dict(row) -> dict:

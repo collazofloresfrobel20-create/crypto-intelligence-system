@@ -147,6 +147,8 @@
   .radar-row svg { flex-shrink: 0; }
   .radar-row .radar-caption { font-size: 11px; color: var(--muted); line-height: 1.6; }
 
+  .card-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
   .timeline-wrap { margin: 10px 0 4px; }
   .timeline-wrap svg { width: 100%; height: auto; display: block; }
   .timeline-caption { font-size: 11px; color: var(--muted); margin-top: 4px; }
@@ -213,7 +215,10 @@
 
     <section class="block">
       <h2>Estado general</h2>
+      <p class="desc">Qué encontró el sistema hasta ahora y qué tan bien le ha ido a lo que ya se pudo verificar contra precio real.</p>
+      <div id="summaryHeadline" class="text-block"></div>
       <div class="numbers-row" id="summaryStats"></div>
+      <div class="numbers-row" id="summaryStats2" style="margin-top:8px;"></div>
     </section>
 
     <hr class="rule">
@@ -235,8 +240,14 @@
   <!-- OPORTUNIDADES -->
   <section class="view" id="view-oportunidades">
     <section class="block">
-      <h2>Oportunidades detectadas</h2>
-      <p class="desc">Candidatos que pasaron los filtros duros y completaron el pipeline de investigación y debate.</p>
+      <h2>Candidatos analizados</h2>
+      <p class="desc">
+        Todo lo que pasó los filtros duros y completó el pipeline de investigación y debate &mdash;
+        no todos son oportunidades reales, la mayoría termina en "High Risk" o "Insufficient
+        Evidence" a propósito (ver disclaimer en Resumen). Usa los filtros para ver solo un
+        veredicto a la vez.
+      </p>
+      <div class="row" id="verdictFilters"></div>
       <div id="predictions" class="cards"><div class="empty-state">Aún no hay predicciones. Ejecuta una actualización desde Resumen.</div></div>
     </section>
   </section>
@@ -265,8 +276,8 @@
   <!-- AUTO-CORRECCIÓN -->
   <section class="view" id="view-autocorreccion">
     <section class="block">
-      <h2>Rendimiento histórico</h2>
-      <p class="desc">Precisión de las predicciones analizadas, evaluadas contra su precio real tras el horizonte de 7 días.</p>
+      <h2>Precisión por nivel de confianza</h2>
+      <p class="desc">Las cifras generales del sistema (total, % de acierto, retorno promedio) están en la pestaña Historial &mdash; aquí solo lo que Historial no muestra: si el confidence_score que da el Juez de verdad predice mejor resultado.</p>
       <div class="row" style="margin-bottom:6px;">
         <button class="btn secondary small" id="btnEvalDue">Revisar vencidas ahora</button>
         <button class="btn secondary small" id="btnStats">Refrescar</button>
@@ -369,7 +380,7 @@ function radarSvg(p) {
     { label: "Confidence", value: p.confidence_score },
     { label: "Earliness", value: p.earliness_score },
   ];
-  const cx = 66, cy = 62, r = 46;
+  const cx = 110, cy = 78, r = 44;
   const n = axes.length;
   const angle = (i) => -Math.PI / 2 + i * (2 * Math.PI / n);
   const pt = (i, frac) => [cx + r * frac * Math.cos(angle(i)), cy + r * frac * Math.sin(angle(i))];
@@ -390,13 +401,13 @@ function radarSvg(p) {
   }).join(" ");
 
   const labels = axes.map((a, i) => {
-    const [x, y] = pt(i, 1.3);
+    const [x, y] = pt(i, 1.22);
     const c = Math.cos(angle(i));
     const anchor = Math.abs(c) < 0.25 ? "middle" : (c > 0 ? "start" : "end");
     return `<text x="${x}" y="${y}" font-size="8.5" fill="var(--muted)" text-anchor="${anchor}" dominant-baseline="middle">${a.label}</text>`;
   }).join("");
 
-  return `<svg viewBox="0 0 132 124" width="132" height="124">
+  return `<svg viewBox="0 0 220 160" width="152" height="110">
     ${rings}${axisLines}
     <polygon points="${dataPts}" fill="rgba(17,17,17,0.10)" stroke="var(--ink)" stroke-width="1.5"/>
     ${labels}
@@ -464,6 +475,21 @@ function renderPipelineDiagram() {
   return `<div class="pipeline-steps">${steps}</div>`;
 }
 
+function fmtPrice(v) {
+  if (v == null || isNaN(v)) return "-";
+  if (v >= 1) return "$" + v.toFixed(3);
+  if (v >= 0.01) return "$" + v.toFixed(5);
+  return "$" + v.toPrecision(3);
+}
+
+function fmtPct(v) {
+  if (v == null || isNaN(v)) return "-";
+  return (v > 0 ? "+" : "") + v + "%";
+}
+
+// Nota: aquí solo se muestran datos observados (precio al análisis, precio actual/real, %
+// desde el análisis) -- nunca niveles de entrada/salida calculados. El sistema es de
+// investigación, no da instrucciones de cuándo comprar/vender (ver disclaimer del header).
 function projectionBox(p) {
   const createdAt = new Date(p.created_at);
   const horizonDays = p.horizon_days || 7;
@@ -473,8 +499,9 @@ function projectionBox(p) {
     const hit = p.thesis_result === "yes" ? "Sí llegó" : (p.thesis_result === "partial" ? "Se acercó" : "No llegó");
     return `
       <div class="projection-box">
-        <div class="projection-item"><div class="val">${p.max_return_pct}%</div><div class="lbl">Máximo alcanzado (real)</div></div>
-        <div class="projection-item"><div class="val">${p.return_pct}%</div><div class="lbl">Al cierre del día ${horizonDays} (real)</div></div>
+        <div class="projection-item"><div class="val">${fmtPrice(p.price_at_prediction)} &rarr; ${fmtPrice(p.price_after)}</div><div class="lbl">Precio: análisis &rarr; cierre día ${horizonDays}</div></div>
+        <div class="projection-item"><div class="val">${fmtPct(p.max_return_pct)}</div><div class="lbl">Máximo alcanzado (real)</div></div>
+        <div class="projection-item"><div class="val">${fmtPct(p.return_pct)}</div><div class="lbl">Al cierre del día ${horizonDays} (real)</div></div>
         <div class="projection-item"><div class="val">${hit}</div><div class="lbl">¿Llegó a +20&ndash;30%?</div></div>
       </div>
     `;
@@ -483,12 +510,26 @@ function projectionBox(p) {
   const now = new Date();
   const daysLeft = Math.max(0, Math.ceil((deadline - now) / 86400000));
   const dateStr = deadline.toLocaleDateString("es-MX", { day: "numeric", month: "short" });
+  const hasMark = p.current_price != null && p.current_return_pct != null;
   return `
     <div class="projection-box">
+      <div class="projection-item"><div class="val">${fmtPrice(p.price_at_prediction)}${hasMark ? " &rarr; " + fmtPrice(p.current_price) : ""}</div><div class="lbl">Precio: análisis${hasMark ? " &rarr; ahora mismo" : " (aún sin revisar de nuevo)"}</div></div>
+      ${hasMark ? `<div class="projection-item"><div class="val">${fmtPct(p.current_return_pct)}</div><div class="lbl">Desde el análisis (en vivo, no es el resultado final)</div></div>` : ""}
       <div class="projection-item"><div class="val">+20% a +30%</div><div class="lbl">Objetivo de búsqueda (no es promesa)</div></div>
       <div class="projection-item"><div class="val">${daysLeft > 0 ? daysLeft + "d" : "hoy"}</div><div class="lbl">Faltan para el día ${horizonDays} (${dateStr})</div></div>
     </div>
   `;
+}
+
+function statusPill(p) {
+  if (p.status === "evaluated") {
+    const label = p.thesis_result === "yes" ? "Sí llegó a +20&ndash;30%" : (p.thesis_result === "partial" ? "Se acercó, no llegó" : "No llegó a +20%");
+    return `<span class="pill-inline">${label}</span>`;
+  }
+  if (p.current_return_pct != null) {
+    return `<span class="pill-inline">En vivo: ${fmtPct(p.current_return_pct)}</span>`;
+  }
+  return "";
 }
 
 function renderPredictions(preds) {
@@ -502,7 +543,10 @@ function renderPredictions(preds) {
     <div class="card">
       <div class="card-head">
         <div><span class="sym">${p.symbol || "?"}</span><span class="name">${p.name || ""}</span></div>
-        <span class="badge ${vclass}">${p.verdict || "N/A"}</span>
+        <div class="card-head-right">
+          <span class="badge ${vclass}">${p.verdict || "N/A"}</span>
+          ${statusPill(p)}
+        </div>
       </div>
       <div class="scores">
         <div class="score-item"><div class="val">${p.opportunity_score ?? "-"}</div><div class="lbl">Opportunity</div></div>
@@ -553,9 +597,32 @@ function renderDiscarded(rows) {
   </table></div>`;
 }
 
+const VERDICT_ORDER = ["Strong Opportunity", "Watchlist", "High Risk / Speculative", "Insufficient Evidence", "Reject"];
+
+let allPredictions = [];
+let verdictFilter = null;  // null = todos
+
+function renderVerdictFilters() {
+  const counts = {};
+  for (const p of allPredictions) counts[p.verdict] = (counts[p.verdict] || 0) + 1;
+  const verdicts = VERDICT_ORDER.filter(v => counts[v]);
+  const pills = [`<button class="btn secondary small" data-v="" style="${verdictFilter === null ? 'background:var(--black);color:#fff;border-color:var(--black);' : ''}">Todos (${allPredictions.length})</button>`]
+    .concat(verdicts.map(v => `<button class="btn secondary small" data-v="${v}" style="${verdictFilter === v ? 'background:var(--black);color:#fff;border-color:var(--black);' : ''}">${v} (${counts[v]})</button>`));
+  $("verdictFilters").innerHTML = pills.join("");
+  $("verdictFilters").querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      verdictFilter = btn.dataset.v || null;
+      renderVerdictFilters();
+      renderPredictions(verdictFilter ? allPredictions.filter(p => p.verdict === verdictFilter) : allPredictions);
+    };
+  });
+}
+
 async function refreshPredictions() {
   const preds = await api("/api/predictions?category=analyzed");
-  renderPredictions(preds);
+  allPredictions = preds;
+  renderVerdictFilters();
+  renderPredictions(verdictFilter ? preds.filter(p => p.verdict === verdictFilter) : preds);
   return preds;
 }
 
@@ -575,12 +642,24 @@ async function refreshSummary() {
     api("/api/predictions?category=discarded").catch(() => []),
     api("/api/diagnoses/latest").catch(() => null),
   ]);
-  const evaluated20 = analyzed.filter(p => p.status === 'evaluated' && (p.max_return_pct ?? 0) >= 20).length;
-  $("summaryStats").innerHTML = [
-    numItem(analyzed.length, "Oportunidades activas"),
+  const byVerdict = {};
+  for (const v of VERDICT_ORDER) byVerdict[v] = 0;
+  for (const p of analyzed) byVerdict[p.verdict] = (byVerdict[p.verdict] || 0) + 1;
+
+  const evaluated = analyzed.filter(p => p.status === 'evaluated');
+  const hit20 = evaluated.filter(p => (p.max_return_pct ?? 0) >= 20).length;
+  const realOpportunities = (byVerdict["Strong Opportunity"] || 0) + (byVerdict["Watchlist"] || 0);
+
+  $("summaryHeadline").innerHTML = realOpportunities > 0
+    ? `<strong>${realOpportunities}</strong> oportunidad(es) real(es) activa(s) ahora mismo (Strong Opportunity + Watchlist) &mdash; revísalas en la pestaña Oportunidades.`
+    : `Ninguna oportunidad fuerte todavía (0 Strong Opportunity, 0 Watchlist de ${analyzed.length} analizados) &mdash; el sistema sigue analizando y descartando, no fuerza veredictos optimistas cuando la evidencia no alcanza.`;
+
+  $("summaryStats").innerHTML = VERDICT_ORDER.map(v => numItem(byVerdict[v] || 0, v)).join("");
+  $("summaryStats2").innerHTML = [
     numItem(discarded.length, "Descartados en seguimiento"),
-    numItem(evaluated20, "Evaluadas +20%"),
-    numItem(diag ? new Date(diag.created_at).toLocaleDateString() : "Ninguno", "Último diagnóstico"),
+    numItem(evaluated.length, "Ya evaluados contra precio real"),
+    numItem(hit20, "De esos, sí llegaron a +20%"),
+    numItem(diag ? new Date(diag.created_at).toLocaleDateString() : "Ninguno", "Último diagnóstico de auto-corrección"),
   ].join("");
 }
 
@@ -638,15 +717,7 @@ function renderStats(s) {
     return;
   }
   $("statsBox").innerHTML = `
-    <div class="numbers-row">
-      ${numItem(s.total_predictions, "Total predicciones")}
-      ${numItem(s.evaluated_predictions, "Evaluadas")}
-      ${numItem(s.pct_reached_plus20 + "%", "Alcanzaron +20%")}
-      ${numItem(s.pct_reached_plus30 + "%", "Alcanzaron +30%")}
-      ${numItem(s.avg_max_return_pct + "%", "Retorno máx. promedio")}
-      ${numItem(s.avg_max_drawdown_pct + "%", "Drawdown promedio")}
-    </div>
-    <div class="section-title" style="margin-top:22px;">Precisión por rango de Confidence</div>
+    <p class="muted">${s.evaluated_predictions} de ${s.total_predictions} predicciones evaluadas hasta ahora, agrupadas por qué tan seguro estaba el Juez:</p>
     <ul class="compact">${Object.entries(s.accuracy_by_confidence_bucket).map(([b,v]) => `<li>Confidence ${b}: ${v.success_rate_pct}% de éxito (n=${v.n})</li>`).join("")}</ul>
   `;
 }
