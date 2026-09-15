@@ -314,6 +314,14 @@ def get_history_overview() -> dict:
     partials = sum(1 for p in evaluated if p["thesis_result"] == "partial")
     overall_hit_rate_pct = round(100 * (hits + 0.5 * partials) / n, 1)
     avg_time_to_max_hours = sum(p["time_to_max_hours"] or 0 for p in evaluated) / n
+    # avg_time_to_max_hours mezcla exitos y fracasos (el "maximo" de algo que nunca llego a
+    # +20% no es tiempo-a-la-meta, es solo su pico real). Este otro solo cuenta los casos que
+    # SI llegaron -- es la unica cifra honesta de "cuanto tarda cuando funciona".
+    hit_rows = [p for p in evaluated if p["thesis_result"] == "yes"]
+    avg_time_to_target_hours = (
+        round(sum(p["time_to_max_hours"] or 0 for p in hit_rows) / len(hit_rows), 1)
+        if hit_rows else None
+    )
 
     by_verdict: dict[str, list[dict]] = {}
     for p in evaluated:
@@ -351,6 +359,8 @@ def get_history_overview() -> dict:
         "last_analyzed_at": date_range["last"],
         "overall_hit_rate_pct": overall_hit_rate_pct,
         "avg_time_to_max_hours": round(avg_time_to_max_hours, 1),
+        "avg_time_to_target_hours": avg_time_to_target_hours,
+        "hit_count_for_timing": len(hit_rows),
         "low_sample_warning": n < MIN_SAMPLE_FOR_CONFIDENCE,
         "min_sample_for_confidence": MIN_SAMPLE_FOR_CONFIDENCE,
         "accuracy_by_verdict": accuracy_by_verdict,

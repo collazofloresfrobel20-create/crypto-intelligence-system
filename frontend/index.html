@@ -842,8 +842,9 @@ function renderHistory(h) {
       ${numItem(h.total_updates_run, "Actualizaciones corridas")}
       ${numItem(h.total_analyzed, "Tokens analizados en total")}
       ${numItem(h.overall_hit_rate_pct + "%", "Tasa de acierto general")}
-      ${numItem(h.avg_time_to_max_hours + "h", "Tiempo promedio a máximo")}
+      ${numItem(h.avg_time_to_target_hours != null ? Math.round(h.avg_time_to_target_hours / 24 * 10) / 10 + "d" : "-", `Tiempo promedio a la meta cuando SÍ llegó (n=${h.hit_count_for_timing})`)}
     </div>
+    <p class="muted" style="margin-top:2px;">Referencia: contando también los que no llegaron, el pico (llegue o no a la meta) tomó en promedio ${h.avg_time_to_max_hours}h.</p>
 
     <div class="section-title" style="margin-top:26px;">Precisión por tipo de veredicto</div>
     <div class="table-wrap">

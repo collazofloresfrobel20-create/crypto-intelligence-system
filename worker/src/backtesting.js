@@ -135,6 +135,13 @@ export async function getHistoryOverview(db) {
   const partials = evaluated.filter((p) => p.thesis_result === "partial").length;
   const overallHitRatePct = round((100 * (hits + 0.5 * partials)) / n, 1);
   const avgTimeToMaxHours = evaluated.reduce((s, p) => s + (p.time_to_max_hours || 0), 0) / n;
+  // avgTimeToMaxHours mezcla exitos y fracasos (el "maximo" de algo que nunca llego a +20% no
+  // es tiempo-a-la-meta, es solo su pico real). Esta otra solo cuenta los casos que SI
+  // llegaron -- es la unica cifra honesta de "cuanto tarda cuando funciona".
+  const hitRows = evaluated.filter((p) => p.thesis_result === "yes");
+  const avgTimeToTargetHours = hitRows.length
+    ? round(hitRows.reduce((s, p) => s + (p.time_to_max_hours || 0), 0) / hitRows.length, 1)
+    : null;
 
   const byVerdict = {};
   for (const p of evaluated) {
@@ -174,6 +181,8 @@ export async function getHistoryOverview(db) {
     last_analyzed_at: dateRange.last_at,
     overall_hit_rate_pct: overallHitRatePct,
     avg_time_to_max_hours: round(avgTimeToMaxHours, 1),
+    avg_time_to_target_hours: avgTimeToTargetHours,
+    hit_count_for_timing: hitRows.length,
     low_sample_warning: n < MIN_SAMPLE_FOR_CONFIDENCE,
     min_sample_for_confidence: MIN_SAMPLE_FOR_CONFIDENCE,
     accuracy_by_verdict: accuracyByVerdict,
