@@ -63,6 +63,11 @@ class Settings:
     # --- Pipeline ---
     MAX_CANDIDATES_PER_RUN = _int("MAX_CANDIDATES_PER_RUN", 15)
     PREDICTION_HORIZON_DAYS = _int("PREDICTION_HORIZON_DAYS", 7)
+    # Regla dura del Juez: por debajo de este confidence_score, el veredicto no puede ser
+    # "Strong Opportunity" (sí puede ser "Watchlist"/"High Risk"/etc). Antes vivía como texto
+    # fijo dentro del prompt -- la auto-corrección podía "proponer" cambiarlo pero no existía
+    # ningún parámetro real que aplicar. Ahora es ajustable como los demás hard filters.
+    MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY = _int("MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY", 40)
 
     # --- GoPlus (sin key requerida para uso básico) ---
     GOPLUS_APP_KEY = os.getenv("GOPLUS_APP_KEY", "")

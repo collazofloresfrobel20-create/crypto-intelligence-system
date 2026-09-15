@@ -327,6 +327,22 @@
     <hr class="rule">
 
     <section class="block">
+      <h2>Umbral del Juez</h2>
+      <p class="desc">
+        Antes vivía fijo en el prompt del Juez (sin forma de ajustarlo de verdad, aunque la
+        auto-corrección "proponía" cambiarlo). Por debajo de este confidence_score, el veredicto
+        NO puede ser "Strong Opportunity" &mdash; sí puede seguir siendo "Watchlist" o cualquier
+        otro. Bajarlo no garantiza más oportunidades reales, solo permite que confidence bajo ya
+        no las bloquee automáticamente.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Confidence mínimo para "Strong Opportunity"<input type="number" id="cfgMinConfidence"></label>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
       <h2>Sistema</h2>
       <div class="table-wrap">
         <table><tbody id="modelInfo"></tbody></table>
@@ -892,6 +908,7 @@ async function loadConfig() {
   $("cfgMinHolders").value = cfg.MIN_HOLDERS;
   $("cfgMaxAge").value = cfg.MAX_LISTING_AGE_DAYS;
   $("cfgMaxCandidates").value = cfg.MAX_CANDIDATES_PER_RUN;
+  $("cfgMinConfidence").value = cfg.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY;
   $("modelInfo").innerHTML = `
     <tr><td>Modelo analistas</td><td>${cfg.GEMINI_MODEL_FAST}</td></tr>
     <tr><td>Modelo debate/juez</td><td>${cfg.GEMINI_MODEL_SMART}</td></tr>
@@ -910,6 +927,7 @@ $("btnSaveConfig").onclick = async () => {
     MIN_HOLDERS: parseInt($("cfgMinHolders").value),
     MAX_LISTING_AGE_DAYS: parseInt($("cfgMaxAge").value),
     MAX_CANDIDATES_PER_RUN: parseInt($("cfgMaxCandidates").value),
+    MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: parseInt($("cfgMinConfidence").value),
   };
   await api("/api/config", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
   $("configStatus").textContent = "Guardado (aplica a la sesión actual del backend).";

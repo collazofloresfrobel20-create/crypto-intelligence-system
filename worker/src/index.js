@@ -13,6 +13,7 @@ const ADJUSTABLE_PARAMS = {
   MIN_HOLDERS: "int",
   MAX_LISTING_AGE_DAYS: "int",
   MAX_CANDIDATES_PER_RUN: "int",
+  MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: "int",
 };
 
 async function saveDynamicConfig(db, updates) {
@@ -208,6 +209,7 @@ async function handleApi(path, request, env) {
     const defaults = {
       MIN_LIQUIDITY_USD: 50000, MIN_VOLUME_24H_USD: 100000, MAX_MARKET_CAP_USD: 50000000,
       MIN_HOLDERS: 200, MAX_LISTING_AGE_DAYS: 120, MAX_CANDIDATES_PER_RUN: 15,
+      MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: 40,
     };
     const cfg = { ...defaults, ...overrides };
     for (const k of Object.keys(defaults)) cfg[k] = Number(cfg[k]);

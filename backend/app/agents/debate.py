@@ -75,7 +75,8 @@ def judge_agent(
             "pero riesgo elevado), 'Reject' (no cumple criterios mínimos), o 'Insufficient "
             "Evidence' (no hay información suficiente para concluir — este veredicto es TAN "
             "VÁLIDO como Strong Opportunity, úsalo cuando corresponda). Regla dura: si "
-            "confidence_score < 40, el veredicto NO puede ser 'Strong Opportunity'. "
+            f"confidence_score < {settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY}, el veredicto "
+            "NO puede ser 'Strong Opportunity'. "
             "Horizonte objetivo: ~7 días, movimiento buscado +20-30% (nunca prometido). "
             + _JSON_RULE
         ),
@@ -105,8 +106,10 @@ def diagnose_system(summary_json: str) -> dict:
             "MIN_LIQUIDITY_USD sí alcanzaron +20%, el umbral está demasiado alto y estamos "
             "perdiendo oportunidades reales'). Propón ajustes concretos de parámetros/umbrales "
             "(nombra el parámetro exacto: MIN_LIQUIDITY_USD, MIN_VOLUME_24H_USD, "
-            "MAX_MARKET_CAP_USD, MIN_HOLDERS, MAX_LISTING_AGE_DAYS, o un umbral mínimo de "
-            "confidence_score para veredictos Strong Opportunity). No inventes causas sin "
+            "MAX_MARKET_CAP_USD, MIN_HOLDERS, MAX_LISTING_AGE_DAYS, o "
+            "MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY -- el corte de confidence_score por debajo "
+            f"del cual el Juez no puede emitir 'Strong Opportunity', hoy en "
+            f"{settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY}). No inventes causas sin "
             "respaldo en los datos que se te dan; si la evidencia es insuficiente para un "
             "diagnóstico confiable, dilo en vez de forzar una conclusión. " + _JSON_RULE
         ),

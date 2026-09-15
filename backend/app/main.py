@@ -208,6 +208,7 @@ def get_config():
         "MAX_LISTING_AGE_DAYS": settings.MAX_LISTING_AGE_DAYS,
         "MAX_CANDIDATES_PER_RUN": settings.MAX_CANDIDATES_PER_RUN,
         "PREDICTION_HORIZON_DAYS": settings.PREDICTION_HORIZON_DAYS,
+        "MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY": settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY,
         "GEMINI_MODEL_FAST": settings.GEMINI_MODEL_FAST,
         "GEMINI_MODEL_SMART": settings.GEMINI_MODEL_SMART,
         "GEMINI_ENABLE_SEARCH_GROUNDING": settings.GEMINI_ENABLE_SEARCH_GROUNDING,
@@ -227,11 +228,11 @@ class ConfigUpdateBody(BaseModel):
     MIN_HOLDERS: int | None = None
     MAX_LISTING_AGE_DAYS: int | None = None
     MAX_CANDIDATES_PER_RUN: int | None = None
+    MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: int | None = None
 
 
 @app.post("/api/config")
 def update_config(body: ConfigUpdateBody):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updated = dynamic_config.save_dynamic_config(updates)
-    return {"updated": updated}
     return {"updated": updated}
