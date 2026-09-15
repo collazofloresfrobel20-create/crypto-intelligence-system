@@ -85,7 +85,15 @@
   .numbers-row .num-item .num { font-size: 34px; font-weight: 600; font-family: Georgia, serif; line-height: 1; }
   .numbers-row .num-item .lbl { font-size: 11.5px; color: var(--muted); margin-top: 8px; letter-spacing: .02em; }
 
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+  /* La conclusión del Resumen lidera antes que los números que la respaldan. */
+  .lead-line { font-size: 15.5px; line-height: 1.55; color: var(--ink); max-width: 68ch; }
+  .lead-line strong { font-family: Georgia, serif; }
+
+  /* Grupos de estadísticas dentro de un mismo bloque: separación deliberada entre grupos,
+     nada entre el título del grupo y sus números. */
+  .stat-group + .stat-group { margin-top: 28px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
   .card { border-top: 1px solid var(--border-strong); padding-top: 18px; }
   .card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 10px; }
   .card-head .sym { font-size: 18px; font-weight: 600; font-family: Georgia, serif; }
@@ -106,9 +114,20 @@
   .score-item .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
 
   .section-title { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .07em; margin: 14px 0 5px; font-weight: 700; }
-  .text-block { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); }
-  ul.compact { margin: 4px 0; padding-left: 16px; font-size: 12.5px; color: var(--ink-soft); }
+  .text-block { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); max-width: 68ch; }
+  ul.compact { margin: 4px 0; padding-left: 16px; font-size: 12.5px; color: var(--ink-soft); max-width: 68ch; }
   ul.compact li { margin-bottom: 3px; }
+
+  /* Agrupa contenido que se lee en contraste (bull/bear, evidencia/riesgos) lado a lado en
+     vez de apilado -- el card ya es lo bastante ancho (min 480px) para que cada columna
+     mantenga una medida de lectura cómoda. */
+  .debate-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 32px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+  .debate-grid > div { min-width: 0; }
+  .debate-grid .section-title { margin-top: 0; }
+  .debate-grid .text-block, .debate-grid ul.compact { max-width: none; }
+  @media (max-width: 640px) {
+    .debate-grid { grid-template-columns: 1fr; row-gap: 18px; }
+  }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   table th {
@@ -216,9 +235,15 @@
     <section class="block">
       <h2>Estado general</h2>
       <p class="desc">Qué encontró el sistema hasta ahora y qué tan bien le ha ido a lo que ya se pudo verificar contra precio real.</p>
-      <div id="summaryHeadline" class="text-block"></div>
-      <div class="numbers-row" id="summaryStats"></div>
-      <div class="numbers-row" id="summaryStats2" style="margin-top:8px;"></div>
+      <div id="summaryHeadline" class="lead-line"></div>
+      <div class="stat-group">
+        <div class="section-title">Esta corrida, por veredicto</div>
+        <div class="numbers-row" id="summaryStats"></div>
+      </div>
+      <div class="stat-group">
+        <div class="section-title">Seguimiento acumulado</div>
+        <div class="numbers-row" id="summaryStats2"></div>
+      </div>
     </section>
 
     <hr class="rule">
@@ -591,12 +616,20 @@ function renderPredictions(preds) {
         ${radarSvg(p)}
         <div class="radar-caption">Forma de la oportunidad: entre más grande y pareja la figura, más fuerte y equilibrada la señal en las 4 dimensiones independientes.</div>
       </div>
-      <div class="section-title">Bull case</div>
-      <div class="text-block">${p.bull_case || "-"}</div>
-      <div class="section-title">Bear case</div>
-      <div class="text-block">${p.bear_case || "-"}</div>
-      ${evidence.length ? `<div class="section-title">Evidencia clave</div><ul class="compact">${evidence.map(e=>`<li>${e}</li>`).join("")}</ul>` : ""}
-      ${risks.length ? `<div class="section-title">Riesgos principales</div><ul class="compact">${risks.map(r=>`<li>${r}</li>`).join("")}</ul>` : ""}
+      <div class="debate-grid">
+        <div>
+          <div class="section-title">Bull case</div>
+          <div class="text-block">${p.bull_case || "-"}</div>
+        </div>
+        <div>
+          <div class="section-title">Bear case</div>
+          <div class="text-block">${p.bear_case || "-"}</div>
+        </div>
+      </div>
+      ${evidence.length || risks.length ? `<div class="debate-grid">
+        <div>${evidence.length ? `<div class="section-title">Evidencia clave</div><ul class="compact">${evidence.map(e=>`<li>${e}</li>`).join("")}</ul>` : ""}</div>
+        <div>${risks.length ? `<div class="section-title">Riesgos principales</div><ul class="compact">${risks.map(r=>`<li>${r}</li>`).join("")}</ul>` : ""}</div>
+      </div>` : ""}
       <div class="section-title">Nota del sistema</div>
       <div class="text-block">${p.system_note || "-"}</div>
       ${p.status === 'evaluated' ? `
