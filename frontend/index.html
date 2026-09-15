@@ -15,6 +15,12 @@
     --muted: #8a8985;
     --faint: #b4b2ac;
     --black: #111111;
+    /* Color funcional, no decorativo: solo para datos con signo (retorno real/en vivo,
+       hit/miss) -- el resto del sistema se queda monocromo a propósito. */
+    --positive: #146c34;
+    --positive-soft: #eef4f0;
+    --negative: #b91c1c;
+    --negative-soft: #f7eeed;
   }
   * { box-sizing: border-box; }
   body {
@@ -154,6 +160,12 @@
   .disclaimer { font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--black); padding-left: 16px; line-height: 1.6; }
 
   .pill-inline { display: inline-block; background: var(--border); color: var(--ink-soft); font-size: 10.5px; padding: 3px 9px; border-radius: 10px; margin: 2px 5px 2px 0; }
+  .pill-inline.pos { background: var(--positive-soft); color: var(--positive); }
+  .pill-inline.neg { background: var(--negative-soft); color: var(--negative); }
+
+  /* Color funcional: solo en valores con signo (retorno real/en vivo). Ver nota en :root. */
+  .pct-positive { color: var(--positive); }
+  .pct-negative { color: var(--negative); }
 
   .empty-state { padding: 30px 0; color: var(--faint); font-size: 13px; }
 
@@ -203,10 +215,12 @@
 
 <nav class="tabs">
   <button class="tab-btn active" data-view="resumen">Resumen</button>
+  <button class="tab-btn" data-view="ranking">Ranking</button>
   <button class="tab-btn" data-view="oportunidades">Candidatos</button>
   <button class="tab-btn" data-view="descartados">Descartados</button>
   <button class="tab-btn" data-view="historial">Historial</button>
   <button class="tab-btn" data-view="autocorreccion">Auto-corrección</button>
+  <button class="tab-btn" data-view="metodologia">Metodología</button>
   <button class="tab-btn" data-view="configuracion">Configuración</button>
 </nav>
 
@@ -252,8 +266,40 @@
       </div>
     </section>
 
-    <hr class="rule">
+  </section>
 
+  <!-- RANKING -->
+  <section class="view" id="view-ranking">
+    <section class="block">
+      <h2>Ranking de candidatos</h2>
+      <p class="desc">
+        Compara todo lo analizado de un vistazo, ordenado por cualquiera de los 4 scores. Filtra
+        primero por Estado/Veredicto, luego haz clic en una fila para saltar a su tarjeta completa
+        en la pestaña Candidatos.
+      </p>
+      <div class="section-title">Estado</div>
+      <div class="row" id="statusFilters" style="margin-bottom:10px;"></div>
+      <div class="section-title">Veredicto</div>
+      <div class="row" id="verdictFilters"></div>
+      <div id="rankingTable" style="margin-top:20px;"></div>
+    </section>
+  </section>
+
+  <!-- OPORTUNIDADES -->
+  <section class="view" id="view-oportunidades">
+    <section class="block">
+      <h2>Candidatos analizados</h2>
+      <p class="desc">
+        Detalle completo &mdash; caso alcista/bajista, evidencia, riesgos y resultado real de cada
+        candidato. El filtro de Estado/Veredicto se controla desde la pestaña <strong>Ranking</strong>;
+        por defecto ves solo lo <strong>activo ahora</strong> (dentro de su horizonte de 7 días).
+      </p>
+      <div id="predictions" class="cards"><div class="empty-state">Aún no hay predicciones. Ejecuta una actualización desde Resumen.</div></div>
+    </section>
+  </section>
+
+  <!-- METODOLOGÍA -->
+  <section class="view" id="view-metodologia">
     <section class="block">
       <h2>Cómo piensa el sistema</h2>
       <p class="desc">
@@ -265,31 +311,6 @@
         sistema (ver pestaña Historial).
       </p>
       <div id="pipelineDiagram"></div>
-    </section>
-  </section>
-
-  <!-- OPORTUNIDADES -->
-  <section class="view" id="view-oportunidades">
-    <section class="block">
-      <h2>Candidatos analizados</h2>
-      <p class="desc">
-        Por defecto solo ves lo <strong>activo ahora</strong> (todavía dentro de su horizonte de
-        7 días) &mdash; no todos son oportunidades reales, la mayoría termina en "High Risk" o
-        "Insufficient Evidence" a propósito (ver disclaimer en Resumen). Cambia el filtro de
-        Estado para ver el historial: "Cerrado" = ya se evaluó contra precio real; "Sin datos" =
-        no se pudo conseguir su precio (típicamente ya no listado en Binance Alpha).
-      </p>
-      <div class="section-title">Estado</div>
-      <div class="row" id="statusFilters" style="margin-bottom:10px;"></div>
-      <div class="section-title">Veredicto</div>
-      <div class="row" id="verdictFilters"></div>
-
-      <div class="section-title" style="margin-top:26px;">Ranking (de lo que ves arriba filtrado)</div>
-      <p class="desc" style="margin-bottom:10px;">Ordena por cualquier score para comparar candidatos de un vistazo. Clic en una fila para saltar a esa tarjeta.</p>
-      <div id="rankingTable"></div>
-
-      <div class="section-title" style="margin-top:26px;">Detalle completo</div>
-      <div id="predictions" class="cards"><div class="empty-state">Aún no hay predicciones. Ejecuta una actualización desde Resumen.</div></div>
     </section>
   </section>
 
@@ -544,6 +565,14 @@ function fmtPct(v) {
   return (v > 0 ? "+" : "") + v + "%";
 }
 
+// Envuelve fmtPct en color funcional (positivo/negativo) -- para valores REALES u
+// observados en vivo, nunca para scores 0-100 (esos no tienen signo).
+function fmtPctColored(v) {
+  const text = fmtPct(v);
+  if (v == null || isNaN(v) || v === 0) return text;
+  return `<span class="${v > 0 ? "pct-positive" : "pct-negative"}">${text}</span>`;
+}
+
 // Nota: aquí solo se muestran datos observados (precio al análisis, precio actual/real, %
 // desde el análisis) -- nunca niveles de entrada/salida calculados. El sistema es de
 // investigación, no da instrucciones de cuándo comprar/vender (ver disclaimer del header).
@@ -557,8 +586,8 @@ function projectionBox(p) {
     return `
       <div class="projection-box">
         <div class="projection-item"><div class="val">${fmtPrice(p.price_at_prediction)} &rarr; ${fmtPrice(p.price_after)}</div><div class="lbl">Precio: análisis &rarr; cierre día ${horizonDays}</div></div>
-        <div class="projection-item"><div class="val">${fmtPct(p.max_return_pct)}</div><div class="lbl">Máximo alcanzado (real)</div></div>
-        <div class="projection-item"><div class="val">${fmtPct(p.return_pct)}</div><div class="lbl">Al cierre del día ${horizonDays} (real)</div></div>
+        <div class="projection-item"><div class="val">${fmtPctColored(p.max_return_pct)}</div><div class="lbl">Máximo alcanzado (real)</div></div>
+        <div class="projection-item"><div class="val">${fmtPctColored(p.return_pct)}</div><div class="lbl">Al cierre del día ${horizonDays} (real)</div></div>
         <div class="projection-item"><div class="val">${hit}</div><div class="lbl">¿Llegó a +20&ndash;30%?</div></div>
       </div>
     `;
@@ -580,7 +609,7 @@ function projectionBox(p) {
   return `
     <div class="projection-box">
       <div class="projection-item"><div class="val">${fmtPrice(p.price_at_prediction)}${hasMark ? " &rarr; " + fmtPrice(p.current_price) : ""}</div><div class="lbl">Precio: análisis${hasMark ? " &rarr; ahora mismo" : " (aún sin revisar de nuevo)"}</div></div>
-      ${hasMark ? `<div class="projection-item"><div class="val">${fmtPct(p.current_return_pct)}</div><div class="lbl">Desde el análisis (en vivo, no es el resultado final)</div></div>` : ""}
+      ${hasMark ? `<div class="projection-item"><div class="val">${fmtPctColored(p.current_return_pct)}</div><div class="lbl">Desde el análisis (en vivo, no es el resultado final)</div></div>` : ""}
       <div class="projection-item"><div class="val">+20% a +30%</div><div class="lbl">Objetivo de búsqueda (no es promesa)</div></div>
       <div class="projection-item"><div class="val">${daysLeft > 0 ? daysLeft + "d" : "hoy"}</div><div class="lbl">Faltan para el día ${horizonDays} (${dateStr})</div></div>
     </div>
@@ -590,13 +619,15 @@ function projectionBox(p) {
 function statusPill(p) {
   if (p.status === "evaluated") {
     const label = p.thesis_result === "yes" ? "Sí llegó a +20&ndash;30%" : (p.thesis_result === "partial" ? "Se acercó, no llegó" : "No llegó a +20%");
-    return `<span class="pill-inline">${label}</span>`;
+    const cls = p.thesis_result === "yes" ? "pos" : p.thesis_result === "no" ? "neg" : "";
+    return `<span class="pill-inline ${cls}">${label}</span>`;
   }
   if (p.status === "unevaluable") {
     return `<span class="pill-inline">Sin datos de precio</span>`;
   }
   if (p.current_return_pct != null) {
-    return `<span class="pill-inline">En vivo: ${fmtPct(p.current_return_pct)}</span>`;
+    const cls = p.current_return_pct > 0 ? "pos" : p.current_return_pct < 0 ? "neg" : "";
+    return `<span class="pill-inline ${cls}">En vivo: ${fmtPct(p.current_return_pct)}</span>`;
   }
   return "";
 }
@@ -780,7 +811,7 @@ function renderRanking(list) {
     <thead><tr>
       <th>#</th><th>Símbolo</th><th>Veredicto</th>
       ${RANK_SORT_OPTIONS.map(([k, l]) => headerCell(k, l)).join("")}
-      <th>Estado</th>
+      <th>Estado</th><th>Resultado (real o en vivo)</th>
     </tr></thead>
     <tbody>
       ${sorted.map((p, i) => `
@@ -793,6 +824,7 @@ function renderRanking(list) {
           <td>${p.confidence_score ?? "-"}</td>
           <td>${p.earliness_score ?? "-"}</td>
           <td>${p.status === "evaluated" ? (p.thesis_result === "yes" ? "Sí llegó" : p.thesis_result === "partial" ? "Se acercó" : "No llegó") : p.status === "unevaluable" ? "Sin datos" : "Activo"}</td>
+          <td>${p.status === "evaluated" ? fmtPctColored(p.return_pct) : p.current_return_pct != null ? fmtPctColored(p.current_return_pct) : "-"}</td>
         </tr>`).join("")}
     </tbody>
   </table></div>`;
@@ -806,6 +838,7 @@ function renderRanking(list) {
   box.querySelectorAll("tr[data-goto]").forEach(tr => {
     tr.style.cursor = "pointer";
     tr.onclick = () => {
+      document.querySelector('.tab-btn[data-view="oportunidades"]').click();
       const target = document.getElementById(tr.dataset.goto);
       if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
     };
@@ -951,7 +984,7 @@ function renderHistory(h) {
   const verdictRows = Object.entries(h.accuracy_by_verdict).map(([v, s]) => `
     <tr>
       <td>${v}</td><td>${s.n}</td><td>${s.success_rate_pct}%</td>
-      <td>${s.avg_max_return_pct}%</td><td>${s.avg_return_at_horizon_pct}%</td>
+      <td>${fmtPctColored(s.avg_max_return_pct)}</td><td>${fmtPctColored(s.avg_return_at_horizon_pct)}</td>
     </tr>`).join("");
 
   box.innerHTML = `
@@ -973,7 +1006,7 @@ function renderHistory(h) {
     </div>
 
     <div class="section-title" style="margin-top:26px;">Mejor y peor llamada</div>
-    <div class="text-block">Mejor: <strong>${h.best_call.symbol}</strong> (${h.best_call.max_return_pct}%) &middot; Peor: <strong>${h.worst_call.symbol}</strong> (${h.worst_call.max_return_pct}%)</div>
+    <div class="text-block">Mejor: <strong>${h.best_call.symbol}</strong> (${fmtPctColored(h.best_call.max_return_pct)}) &middot; Peor: <strong>${h.worst_call.symbol}</strong> (${fmtPctColored(h.worst_call.max_return_pct)})</div>
 
     <div class="section-title" style="margin-top:26px;">Simulación de dinero (educativa)</div>
     <p class="muted" style="max-width:60ch;">${sim.disclaimer}</p>
