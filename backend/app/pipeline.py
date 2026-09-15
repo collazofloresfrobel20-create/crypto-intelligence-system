@@ -210,6 +210,19 @@ def _recently_tracked_symbols(hours: int = 20) -> set[str]:
     return {r["symbol"] for r in rows}
 
 
+def _permanently_unevaluable_symbols() -> set[str]:
+    """Símbolos que ya se confirmó (backtesting.evaluate_due_predictions) que no se les puede
+    conseguir precio en Binance Alpha (típicamente porque ya no están listados o cambiaron de
+    par). Encontrado en producción: sin este filtro, el ranking los sigue seleccionando como
+    'candidatos' día tras día -- gastando 11 llamadas de Gemini por token en algo que nunca se
+    podrá verificar contra precio real."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT symbol FROM predictions WHERE status = 'unevaluable'"
+        ).fetchall()
+    return {r["symbol"] for r in rows}
+
+
 def run_update_cycle(existing_run_id: str | None = None) -> str:
     """
     Ciclo único de actualización del sistema:
@@ -230,6 +243,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         _append_log(run_id, f"Universo total: {len(universe)} tokens.")
 
         already_tracked = _recently_tracked_symbols()
+        unevaluable_symbols = _permanently_unevaluable_symbols()
 
         survivors, discarded = [], []
         for token in universe:
@@ -249,9 +263,12 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 pass
         _append_log(run_id, f"Registrados {new_discarded} descartados nuevos para seguimiento (de {len(discarded)}).")
 
-        candidates = filters.rank_candidates([t for t, _ in survivors], settings.MAX_CANDIDATES_PER_RUN)
+        eligible_survivors = [t for t, _ in survivors if t.get("symbol") not in unevaluable_symbols]
+        candidates = filters.rank_candidates(eligible_survivors, settings.MAX_CANDIDATES_PER_RUN)
         candidates = [t for t in candidates if t.get("symbol") not in already_tracked]
-        _append_log(run_id, f"Candidatos nuevos para research profundo: {len(candidates)}.")
+        skipped_unevaluable = len(survivors) - len(eligible_survivors)
+        _append_log(run_id, f"Candidatos nuevos para research profundo: {len(candidates)}."
+                    + (f" ({skipped_unevaluable} excluidos por no tener precio disponible en ciclos anteriores.)" if skipped_unevaluable else ""))
 
         for i, token in enumerate(candidates, start=1):
             symbol = token.get("symbol")

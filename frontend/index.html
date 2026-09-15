@@ -244,9 +244,13 @@
       <p class="desc">
         Todo lo que pasó los filtros duros y completó el pipeline de investigación y debate &mdash;
         no todos son oportunidades reales, la mayoría termina en "High Risk" o "Insufficient
-        Evidence" a propósito (ver disclaimer en Resumen). Usa los filtros para ver solo un
-        veredicto a la vez.
+        Evidence" a propósito (ver disclaimer en Resumen). "Activo ahora" = todavía dentro de su
+        horizonte de 7 días; "Cerrado" = ya se evaluó contra precio real; "Sin datos" = no se pudo
+        conseguir su precio (típicamente ya no listado en Binance Alpha).
       </p>
+      <div class="section-title">Estado</div>
+      <div class="row" id="statusFilters" style="margin-bottom:10px;"></div>
+      <div class="section-title">Veredicto</div>
       <div class="row" id="verdictFilters"></div>
       <div id="predictions" class="cards"><div class="empty-state">Aún no hay predicciones. Ejecuta una actualización desde Resumen.</div></div>
     </section>
@@ -507,6 +511,15 @@ function projectionBox(p) {
     `;
   }
 
+  if (p.status === "unevaluable") {
+    return `
+      <div class="projection-box">
+        <div class="projection-item"><div class="val">${fmtPrice(p.price_at_prediction)}</div><div class="lbl">Precio al análisis</div></div>
+        <div class="projection-item"><div class="val">Sin datos</div><div class="lbl">No se pudo conseguir precio para evaluarla (típicamente ya no listado en Binance Alpha)</div></div>
+      </div>
+    `;
+  }
+
   const now = new Date();
   const daysLeft = Math.max(0, Math.ceil((deadline - now) / 86400000));
   const dateStr = deadline.toLocaleDateString("es-MX", { day: "numeric", month: "short" });
@@ -525,6 +538,9 @@ function statusPill(p) {
   if (p.status === "evaluated") {
     const label = p.thesis_result === "yes" ? "Sí llegó a +20&ndash;30%" : (p.thesis_result === "partial" ? "Se acercó, no llegó" : "No llegó a +20%");
     return `<span class="pill-inline">${label}</span>`;
+  }
+  if (p.status === "unevaluable") {
+    return `<span class="pill-inline">Sin datos de precio</span>`;
   }
   if (p.current_return_pct != null) {
     return `<span class="pill-inline">En vivo: ${fmtPct(p.current_return_pct)}</span>`;
@@ -598,22 +614,71 @@ function renderDiscarded(rows) {
 }
 
 const VERDICT_ORDER = ["Strong Opportunity", "Watchlist", "High Risk / Speculative", "Insufficient Evidence", "Reject"];
+const STATUS_OPTIONS = [
+  ["active", "Activo ahora"],
+  ["evaluated", "Cerrado"],
+  ["unevaluable", "Sin datos"],
+];
 
 let allPredictions = [];
 let verdictFilter = null;  // null = todos
+let statusFilter = null;   // null = todos
+
+function isActive(p) {
+  if (p.status !== "pending") return false;
+  const deadline = new Date(p.created_at).getTime() + (p.horizon_days || 7) * 86400000;
+  return deadline >= Date.now();
+}
+
+function matchesStatus(p, sf) {
+  if (!sf) return true;
+  if (sf === "active") return isActive(p);
+  return p.status === sf;
+}
+
+function applyFilters(list) {
+  return list.filter(p => (!verdictFilter || p.verdict === verdictFilter) && matchesStatus(p, statusFilter));
+}
+
+function pillBtn(label, active, dataAttr) {
+  return `<button class="btn secondary small" data-v="${dataAttr}" style="${active ? 'background:var(--black);color:#fff;border-color:var(--black);' : ''}">${label}</button>`;
+}
+
+function renderStatusFilters() {
+  const base = allPredictions.filter(p => !verdictFilter || p.verdict === verdictFilter);
+  const counts = { active: 0, evaluated: 0, unevaluable: 0 };
+  for (const p of base) {
+    if (isActive(p)) counts.active++;
+    else if (p.status === "evaluated") counts.evaluated++;
+    else if (p.status === "unevaluable") counts.unevaluable++;
+  }
+  const pills = [pillBtn(`Todos (${base.length})`, statusFilter === null, "")]
+    .concat(STATUS_OPTIONS.map(([key, label]) => pillBtn(`${label} (${counts[key]})`, statusFilter === key, key)));
+  $("statusFilters").innerHTML = pills.join("");
+  $("statusFilters").querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      statusFilter = btn.dataset.v || null;
+      renderStatusFilters();
+      renderVerdictFilters();
+      renderPredictions(applyFilters(allPredictions));
+    };
+  });
+}
 
 function renderVerdictFilters() {
+  const base = allPredictions.filter(p => matchesStatus(p, statusFilter));
   const counts = {};
-  for (const p of allPredictions) counts[p.verdict] = (counts[p.verdict] || 0) + 1;
+  for (const p of base) counts[p.verdict] = (counts[p.verdict] || 0) + 1;
   const verdicts = VERDICT_ORDER.filter(v => counts[v]);
-  const pills = [`<button class="btn secondary small" data-v="" style="${verdictFilter === null ? 'background:var(--black);color:#fff;border-color:var(--black);' : ''}">Todos (${allPredictions.length})</button>`]
-    .concat(verdicts.map(v => `<button class="btn secondary small" data-v="${v}" style="${verdictFilter === v ? 'background:var(--black);color:#fff;border-color:var(--black);' : ''}">${v} (${counts[v]})</button>`));
+  const pills = [pillBtn(`Todos (${base.length})`, verdictFilter === null, "")]
+    .concat(verdicts.map(v => pillBtn(`${v} (${counts[v]})`, verdictFilter === v, v)));
   $("verdictFilters").innerHTML = pills.join("");
   $("verdictFilters").querySelectorAll("button").forEach(btn => {
     btn.onclick = () => {
       verdictFilter = btn.dataset.v || null;
+      renderStatusFilters();
       renderVerdictFilters();
-      renderPredictions(verdictFilter ? allPredictions.filter(p => p.verdict === verdictFilter) : allPredictions);
+      renderPredictions(applyFilters(allPredictions));
     };
   });
 }
@@ -621,8 +686,9 @@ function renderVerdictFilters() {
 async function refreshPredictions() {
   const preds = await api("/api/predictions?category=analyzed");
   allPredictions = preds;
+  renderStatusFilters();
   renderVerdictFilters();
-  renderPredictions(verdictFilter ? preds.filter(p => p.verdict === verdictFilter) : preds);
+  renderPredictions(applyFilters(preds));
   return preds;
 }
 
@@ -647,15 +713,17 @@ async function refreshSummary() {
   for (const p of analyzed) byVerdict[p.verdict] = (byVerdict[p.verdict] || 0) + 1;
 
   const evaluated = analyzed.filter(p => p.status === 'evaluated');
+  const activeNow = analyzed.filter(isActive);
   const hit20 = evaluated.filter(p => (p.max_return_pct ?? 0) >= 20).length;
-  const realOpportunities = (byVerdict["Strong Opportunity"] || 0) + (byVerdict["Watchlist"] || 0);
+  const realOpportunitiesActive = activeNow.filter(p => p.verdict === "Strong Opportunity" || p.verdict === "Watchlist").length;
 
-  $("summaryHeadline").innerHTML = realOpportunities > 0
-    ? `<strong>${realOpportunities}</strong> oportunidad(es) real(es) activa(s) ahora mismo (Strong Opportunity + Watchlist) &mdash; revísalas en la pestaña Oportunidades.`
-    : `Ninguna oportunidad fuerte todavía (0 Strong Opportunity, 0 Watchlist de ${analyzed.length} analizados) &mdash; el sistema sigue analizando y descartando, no fuerza veredictos optimistas cuando la evidencia no alcanza.`;
+  $("summaryHeadline").innerHTML = realOpportunitiesActive > 0
+    ? `<strong>${realOpportunitiesActive}</strong> oportunidad(es) real(es) activa(s) ahora mismo (Strong Opportunity + Watchlist, dentro de su horizonte de 7 días) &mdash; revísalas en la pestaña Oportunidades filtrando por "Activo ahora".`
+    : `Ninguna oportunidad fuerte activa ahora mismo (0 Strong Opportunity, 0 Watchlist en toda la historia del sistema: ${analyzed.length} analizados desde que arrancó) &mdash; el sistema sigue analizando y descartando, no fuerza veredictos optimistas cuando la evidencia no alcanza.`;
 
   $("summaryStats").innerHTML = VERDICT_ORDER.map(v => numItem(byVerdict[v] || 0, v)).join("");
   $("summaryStats2").innerHTML = [
+    numItem(activeNow.length, "Activos ahora (dentro de sus 7 días)"),
     numItem(discarded.length, "Descartados en seguimiento"),
     numItem(evaluated.length, "Ya evaluados contra precio real"),
     numItem(hit20, "De esos, sí llegaron a +20%"),

@@ -81,8 +81,17 @@ def evaluate_prediction(pred: dict) -> dict | None:
     }
 
 
+UNEVALUABLE_GRACE_DAYS = 3  # margen extra tras vencer el horizonte antes de darla por no-evaluable
+
+
 def evaluate_due_predictions() -> int:
-    """Evalúa y persiste TODAS las entradas 'pending' (analyzed + discarded) cuyo horizonte ya venció. Devuelve cuántas se evaluaron."""
+    """Evalúa y persiste TODAS las entradas 'pending' (analyzed + discarded) cuyo horizonte ya
+    venció. Si no se puede obtener su precio (klines vacío -- típicamente porque el token ya no
+    está listado en Binance Alpha o cambió de par) se reintenta un margen de
+    UNEVALUABLE_GRACE_DAYS; pasado eso se marca 'unevaluable' en vez de quedar 'pending' para
+    siempre reintentándose cada ciclo sin nunca resolver (encontrado en producción: 3 símbolos
+    llevaban semanas atorados así). Devuelve cuántas se evaluaron (no cuenta las marcadas
+    unevaluable)."""
     with get_conn() as conn:
         rows = [row_to_dict(r) for r in conn.execute(
             "SELECT * FROM predictions WHERE status = 'pending'"
@@ -90,10 +99,17 @@ def evaluate_due_predictions() -> int:
 
     evaluated = 0
     for pred in rows:
-        if _hours_since(pred["created_at"]) < pred["horizon_days"] * 24:
+        hours_since = _hours_since(pred["created_at"])
+        if hours_since < pred["horizon_days"] * 24:
             continue
         result = evaluate_prediction(pred)
         if not result:
+            if hours_since >= (pred["horizon_days"] + UNEVALUABLE_GRACE_DAYS) * 24:
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE predictions SET status = 'unevaluable', evaluated_at = ? WHERE id = ?",
+                        (datetime.now(timezone.utc).isoformat(), pred["id"]),
+                    )
             continue
         with get_conn() as conn:
             conn.execute(
