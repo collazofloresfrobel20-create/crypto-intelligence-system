@@ -136,6 +136,13 @@
 
   .empty-state { padding: 30px 0; color: var(--faint); font-size: 13px; }
 
+  .projection-box {
+    display: flex; gap: 18px; flex-wrap: wrap; background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: 8px; padding: 12px 14px; margin: 12px 0 2px;
+  }
+  .projection-item .val { font-size: 15px; font-weight: 700; font-family: Georgia, serif; }
+  .projection-item .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; max-width: 160px; line-height: 1.3; }
+
   .radar-row { display: flex; gap: 18px; align-items: center; margin: 4px 0 6px; }
   .radar-row svg { flex-shrink: 0; }
   .radar-row .radar-caption { font-size: 11px; color: var(--muted); line-height: 1.6; }
@@ -144,11 +151,15 @@
   .timeline-wrap svg { width: 100%; height: auto; display: block; }
   .timeline-caption { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
-  .pipeline-row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; margin: 4px 0; }
-  .pipeline-svg-wrap { flex: 0 0 260px; }
-  .pipeline-diagram { width: 100%; max-width: 260px; height: auto; display: block; }
-  .pipeline-box-lbl { font-size: 8.5px; font-weight: 600; fill: var(--ink); }
-  .pipeline-legend { flex: 1 1 280px; min-width: 240px; margin-top: 2px; }
+  .pipeline-steps { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 8px 0; max-width: 480px; }
+  .pipeline-step { display: flex; flex-direction: column; align-items: center; width: 100%; }
+  .pipeline-step-box {
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 7px;
+    padding: 9px 16px; font-size: 12px; font-weight: 600; color: var(--ink); text-align: center;
+    width: 100%; max-width: 340px;
+  }
+  .pipeline-step-arrow { color: var(--border-strong); font-size: 13px; line-height: 1.4; }
+  .pipeline-step-sub { font-size: 10.5px; color: var(--muted); text-align: center; max-width: 380px; margin: 2px 0 4px; line-height: 1.4; }
 </style>
 </head>
 <body>
@@ -439,36 +450,43 @@ const PIPELINE_STAGES = [
 ];
 
 function renderPipelineDiagram() {
-  const boxH = 20, gap = 7, w = 280;
+  // HTML/CSS puro (no SVG): en este entorno un SVG en esta posicion hacia que la captura de
+  // pantalla completa saliera en blanco, incluso ya achicado y sin <marker>. Con divs no pasa.
   const n = PIPELINE_STAGES.length;
-  const totalH = n * boxH + (n - 1) * gap;
-  const boxes = PIPELINE_STAGES.map(([title], i) => {
-    const y = i * (boxH + gap);
-    const arrow = i < n - 1
-      ? `<line x1="${w/2}" y1="${y + boxH}" x2="${w/2}" y2="${y + boxH + gap}" stroke="var(--border-strong)" stroke-width="1.5" marker-end="url(#arrowhead)"/>`
-      : "";
+  const steps = PIPELINE_STAGES.map(([title, sub], i) => `
+    <div class="pipeline-step">
+      <div class="pipeline-step-box">${title}</div>
+      ${i < n - 1 ? '<div class="pipeline-step-arrow">&darr;</div>' : ""}
+      <div class="pipeline-step-sub">${sub}</div>
+    </div>
+  `).join("");
+
+  return `<div class="pipeline-steps">${steps}</div>`;
+}
+
+function projectionBox(p) {
+  const createdAt = new Date(p.created_at);
+  const horizonDays = p.horizon_days || 7;
+  const deadline = new Date(createdAt.getTime() + horizonDays * 86400000);
+
+  if (p.status === "evaluated") {
+    const hit = p.thesis_result === "yes" ? "Sí llegó" : (p.thesis_result === "partial" ? "Se acercó" : "No llegó");
     return `
-      <rect x="4" y="${y}" width="${w - 8}" height="${boxH}" rx="5" fill="var(--surface)" stroke="var(--border-strong)"/>
-      <text x="${w/2}" y="${y + boxH/2 + 3.5}" text-anchor="middle" class="pipeline-box-lbl">${title}</text>
-      ${arrow}
+      <div class="projection-box">
+        <div class="projection-item"><div class="val">${p.max_return_pct}%</div><div class="lbl">Máximo alcanzado (real)</div></div>
+        <div class="projection-item"><div class="val">${p.return_pct}%</div><div class="lbl">Al cierre del día ${horizonDays} (real)</div></div>
+        <div class="projection-item"><div class="val">${hit}</div><div class="lbl">¿Llegó a +20&ndash;30%?</div></div>
+      </div>
     `;
-  }).join("");
+  }
 
-  const svg = `<svg class="pipeline-diagram" viewBox="0 0 ${w} ${totalH}" preserveAspectRatio="xMidYMin meet">
-    <defs>
-      <marker id="arrowhead" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
-        <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--border-strong)"/>
-      </marker>
-    </defs>
-    ${boxes}
-  </svg>`;
-
-  const legend = PIPELINE_STAGES.map(([title, sub]) => `<li><strong>${title}</strong> &mdash; ${sub}</li>`).join("");
-
+  const now = new Date();
+  const daysLeft = Math.max(0, Math.ceil((deadline - now) / 86400000));
+  const dateStr = deadline.toLocaleDateString("es-MX", { day: "numeric", month: "short" });
   return `
-    <div class="pipeline-row">
-      <div class="pipeline-svg-wrap">${svg}</div>
-      <ul class="compact pipeline-legend">${legend}</ul>
+    <div class="projection-box">
+      <div class="projection-item"><div class="val">+20% a +30%</div><div class="lbl">Objetivo de búsqueda (no es promesa)</div></div>
+      <div class="projection-item"><div class="val">${daysLeft > 0 ? daysLeft + "d" : "hoy"}</div><div class="lbl">Faltan para el día ${horizonDays} (${dateStr})</div></div>
     </div>
   `;
 }
@@ -492,6 +510,7 @@ function renderPredictions(preds) {
         <div class="score-item"><div class="val">${p.confidence_score ?? "-"}</div><div class="lbl">Confidence</div></div>
         <div class="score-item"><div class="val">${p.earliness_score ?? "-"}</div><div class="lbl">Earliness</div></div>
       </div>
+      ${projectionBox(p)}
       <div class="radar-row">
         ${radarSvg(p)}
         <div class="radar-caption">Forma de la oportunidad: entre más grande y pareja la figura, más fuerte y equilibrada la señal en las 4 dimensiones independientes.</div>

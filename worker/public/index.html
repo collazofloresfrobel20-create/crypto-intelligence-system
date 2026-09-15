@@ -136,6 +136,13 @@
 
   .empty-state { padding: 30px 0; color: var(--faint); font-size: 13px; }
 
+  .projection-box {
+    display: flex; gap: 18px; flex-wrap: wrap; background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: 8px; padding: 12px 14px; margin: 12px 0 2px;
+  }
+  .projection-item .val { font-size: 15px; font-weight: 700; font-family: Georgia, serif; }
+  .projection-item .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; max-width: 160px; line-height: 1.3; }
+
   .radar-row { display: flex; gap: 18px; align-items: center; margin: 4px 0 6px; }
   .radar-row svg { flex-shrink: 0; }
   .radar-row .radar-caption { font-size: 11px; color: var(--muted); line-height: 1.6; }
@@ -456,6 +463,33 @@ function renderPipelineDiagram() {
   return `<div class="pipeline-steps">${steps}</div>`;
 }
 
+function projectionBox(p) {
+  const createdAt = new Date(p.created_at);
+  const horizonDays = p.horizon_days || 7;
+  const deadline = new Date(createdAt.getTime() + horizonDays * 86400000);
+
+  if (p.status === "evaluated") {
+    const hit = p.thesis_result === "yes" ? "Sí llegó" : (p.thesis_result === "partial" ? "Se acercó" : "No llegó");
+    return `
+      <div class="projection-box">
+        <div class="projection-item"><div class="val">${p.max_return_pct}%</div><div class="lbl">Máximo alcanzado (real)</div></div>
+        <div class="projection-item"><div class="val">${p.return_pct}%</div><div class="lbl">Al cierre del día ${horizonDays} (real)</div></div>
+        <div class="projection-item"><div class="val">${hit}</div><div class="lbl">¿Llegó a +20&ndash;30%?</div></div>
+      </div>
+    `;
+  }
+
+  const now = new Date();
+  const daysLeft = Math.max(0, Math.ceil((deadline - now) / 86400000));
+  const dateStr = deadline.toLocaleDateString("es-MX", { day: "numeric", month: "short" });
+  return `
+    <div class="projection-box">
+      <div class="projection-item"><div class="val">+20% a +30%</div><div class="lbl">Objetivo de búsqueda (no es promesa)</div></div>
+      <div class="projection-item"><div class="val">${daysLeft > 0 ? daysLeft + "d" : "hoy"}</div><div class="lbl">Faltan para el día ${horizonDays} (${dateStr})</div></div>
+    </div>
+  `;
+}
+
 function renderPredictions(preds) {
   const el = $("predictions");
   if (!preds.length) { el.innerHTML = '<div class="empty-state">Sin resultados todavía.</div>'; return; }
@@ -475,6 +509,7 @@ function renderPredictions(preds) {
         <div class="score-item"><div class="val">${p.confidence_score ?? "-"}</div><div class="lbl">Confidence</div></div>
         <div class="score-item"><div class="val">${p.earliness_score ?? "-"}</div><div class="lbl">Earliness</div></div>
       </div>
+      ${projectionBox(p)}
       <div class="radar-row">
         ${radarSvg(p)}
         <div class="radar-caption">Forma de la oportunidad: entre más grande y pareja la figura, más fuerte y equilibrada la señal en las 4 dimensiones independientes.</div>
