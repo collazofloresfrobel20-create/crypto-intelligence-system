@@ -12,7 +12,7 @@ MIN_EVALUATIONS_FOR_DIAGNOSIS = 3
 
 _ADJUSTABLE_PARAMS = {
     "MIN_LIQUIDITY_USD", "MIN_VOLUME_24H_USD", "MAX_MARKET_CAP_USD",
-    "MIN_HOLDERS", "MAX_LISTING_AGE_DAYS",
+    "MIN_HOLDERS", "MAX_LISTING_AGE_DAYS", "MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY",
 }
 
 
@@ -41,6 +41,7 @@ def generate_diagnosis(run_id: str | None = None) -> dict | None:
             "MAX_MARKET_CAP_USD": settings.MAX_MARKET_CAP_USD,
             "MIN_HOLDERS": settings.MIN_HOLDERS,
             "MAX_LISTING_AGE_DAYS": settings.MAX_LISTING_AGE_DAYS,
+            "MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY": settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY,
         },
         "filter_efficacy": efficacy,
         "analyzed_predictions": [
