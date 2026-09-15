@@ -210,6 +210,22 @@ def _recently_tracked_symbols(hours: int = 20) -> set[str]:
     return {r["symbol"] for r in rows}
 
 
+def _symbols_with_open_analysis() -> set[str]:
+    """Símbolos que YA tienen un análisis profundo 'pending' sin resolver (categoría
+    'analyzed'). Encontrado en producción: con la sola ventana de `_recently_tracked_symbols`
+    (20h) el ranking pre-Earliness re-selecciona casi cada ciclo a los mismos ~10 símbolos con
+    mejor volumen/market cap (en 13 dias, 168 analisis fueron solo 36 simbolos distintos --
+    algunos re-investigados 12-14 veces). No tiene sentido gastar otras 11 llamadas de Gemini
+    en un símbolo cuyo veredicto anterior todavía ni siquiera se terminó de verificar contra
+    precio real; mejor esperar a que resuelva (evaluated/unevaluable) y así el research se
+    reparte sobre más candidatos distintos en vez de repetir siempre los mismos."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT symbol FROM predictions WHERE category = 'analyzed' AND status = 'pending'"
+        ).fetchall()
+    return {r["symbol"] for r in rows}
+
+
 def _permanently_unevaluable_symbols() -> set[str]:
     """Símbolos que ya se confirmó (backtesting.evaluate_due_predictions) que no se les puede
     conseguir precio en Binance Alpha (típicamente porque ya no están listados o cambiaron de
@@ -244,6 +260,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
 
         already_tracked = _recently_tracked_symbols()
         unevaluable_symbols = _permanently_unevaluable_symbols()
+        open_analysis_symbols = _symbols_with_open_analysis()
 
         survivors, discarded = [], []
         for token in universe:
@@ -263,12 +280,15 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 pass
         _append_log(run_id, f"Registrados {new_discarded} descartados nuevos para seguimiento (de {len(discarded)}).")
 
-        eligible_survivors = [t for t, _ in survivors if t.get("symbol") not in unevaluable_symbols]
+        excluded_symbols = unevaluable_symbols | open_analysis_symbols
+        eligible_survivors = [t for t, _ in survivors if t.get("symbol") not in excluded_symbols]
         candidates = filters.rank_candidates(eligible_survivors, settings.MAX_CANDIDATES_PER_RUN)
         candidates = [t for t in candidates if t.get("symbol") not in already_tracked]
-        skipped_unevaluable = len(survivors) - len(eligible_survivors)
+        skipped_unevaluable = len([t for t, _ in survivors if t.get("symbol") in unevaluable_symbols])
+        skipped_open = len([t for t, _ in survivors if t.get("symbol") in open_analysis_symbols])
         _append_log(run_id, f"Candidatos nuevos para research profundo: {len(candidates)}."
-                    + (f" ({skipped_unevaluable} excluidos por no tener precio disponible en ciclos anteriores.)" if skipped_unevaluable else ""))
+                    + (f" ({skipped_unevaluable} excluidos por no tener precio disponible en ciclos anteriores.)" if skipped_unevaluable else "")
+                    + (f" ({skipped_open} excluidos por ya tener un análisis pendiente de resolver, para diversificar el research en vez de repetir siempre los mismos símbolos.)" if skipped_open else ""))
 
         for i, token in enumerate(candidates, start=1):
             symbol = token.get("symbol")
