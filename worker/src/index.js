@@ -148,6 +148,11 @@ async function handleApi(path, request, env) {
     const rows = await db.all(sql, args);
     return json(rows.map(rowWithJson));
   }
+  if (path === "/api/predictions/count" && request.method === "GET") {
+    const category = url.searchParams.get("category") || "analyzed";
+    const row = await db.one("SELECT COUNT(*) as n FROM predictions WHERE category = ?", [category]);
+    return json({ category, count: row ? row.n : 0 });
+  }
 
   const predMatch = path.match(/^\/api\/predictions\/(\d+)$/);
   if (predMatch && request.method === "GET") {

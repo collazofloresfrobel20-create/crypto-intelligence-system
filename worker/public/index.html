@@ -607,10 +607,15 @@ function renderPredictions(preds) {
   }).join("");
 }
 
-function renderDiscarded(rows) {
+const DISCARDED_STATUS_LABEL = { pending: "Pendiente", evaluated: "Evaluado", unevaluable: "Sin datos" };
+
+function renderDiscarded(rows, total) {
   const el = $("discardedTable");
   if (!rows.length) { el.innerHTML = '<div class="empty-state">Sin datos todavía.</div>'; return; }
-  el.innerHTML = `<div class="table-wrap"><table>
+  const totalNote = total > rows.length
+    ? `<p class="muted" style="margin-bottom:10px;">Mostrando los ${rows.length} más recientes de <strong>${total.toLocaleString("es-MX")}</strong> descartados en total (la tabla no carga todos por rendimiento; las estadísticas de Auto-corrección sí usan el total real).</p>`
+    : "";
+  el.innerHTML = totalNote + `<div class="table-wrap"><table>
     <thead><tr><th>Símbolo</th><th>Razón de rechazo</th><th>Estado</th><th>Retorno máx. real</th><th>¿Se perdió la oportunidad?</th></tr></thead>
     <tbody>
       ${rows.map(r => {
@@ -619,7 +624,7 @@ function renderDiscarded(rows) {
         return `<tr>
           <td><strong>${r.symbol}</strong></td>
           <td>${reasons.map(x => `<span class="pill-inline">${x}</span>`).join("")}</td>
-          <td>${r.status}</td>
+          <td>${DISCARDED_STATUS_LABEL[r.status] || r.status}</td>
           <td>${r.status === 'evaluated' ? r.max_return_pct + '%' : '-'}</td>
           <td>${r.status === 'evaluated' ? (missed ? 'Sí' : 'No') : '-'}</td>
         </tr>`;
@@ -699,7 +704,7 @@ function renderVerdictFilters() {
 }
 
 async function refreshPredictions() {
-  const preds = await api("/api/predictions?category=analyzed");
+  const preds = await api("/api/predictions?category=analyzed&limit=2000");
   allPredictions = preds;
   renderStatusFilters();
   renderVerdictFilters();
@@ -707,10 +712,15 @@ async function refreshPredictions() {
   return preds;
 }
 
+const DISCARDED_TABLE_LIMIT = 300;
+
 async function refreshDiscarded() {
-  const rows = await api("/api/predictions?category=discarded");
-  renderDiscarded(rows);
-  return rows;
+  const [rows, countResp] = await Promise.all([
+    api(`/api/predictions?category=discarded&limit=${DISCARDED_TABLE_LIMIT}`),
+    api("/api/predictions/count?category=discarded").catch(() => null),
+  ]);
+  renderDiscarded(rows, countResp ? countResp.count : rows.length);
+  return { rows, total: countResp ? countResp.count : rows.length };
 }
 
 function numItem(num, lbl) {
@@ -718,9 +728,9 @@ function numItem(num, lbl) {
 }
 
 async function refreshSummary() {
-  const [analyzed, discarded, diag] = await Promise.all([
-    api("/api/predictions?category=analyzed").catch(() => []),
-    api("/api/predictions?category=discarded").catch(() => []),
+  const [analyzed, discardedCount, diag] = await Promise.all([
+    api("/api/predictions?category=analyzed&limit=2000").catch(() => []),
+    api("/api/predictions/count?category=discarded").catch(() => null),
     api("/api/diagnoses/latest").catch(() => null),
   ]);
   const byVerdict = {};
@@ -739,7 +749,7 @@ async function refreshSummary() {
   $("summaryStats").innerHTML = VERDICT_ORDER.map(v => numItem(byVerdict[v] || 0, v)).join("");
   $("summaryStats2").innerHTML = [
     numItem(activeNow.length, "Activos ahora (dentro de sus 7 días)"),
-    numItem(discarded.length, "Descartados en seguimiento"),
+    numItem(discardedCount ? discardedCount.count.toLocaleString("es-MX") : "-", "Descartados en seguimiento (total real)"),
     numItem(evaluated.length, "Ya evaluados contra precio real"),
     numItem(hit20, "De esos, sí llegaron a +20%"),
     numItem(diag ? new Date(diag.created_at).toLocaleDateString() : "Ninguno", "Último diagnóstico de auto-corrección"),

@@ -139,6 +139,18 @@ def list_predictions(category: str = "analyzed", run_id: str | None = None, limi
     return [row_to_dict(r) for r in rows]
 
 
+@app.get("/api/predictions/count")
+def count_predictions(category: str = "analyzed"):
+    """Conteo real (sin el LIMIT de list_predictions). Encontrado en producción: el dashboard
+    mostraba "200 descartados" en todos lados -- ese era el límite por defecto de la lista, no
+    el total real (que resultó ser 9,346)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) as n FROM predictions WHERE category = ?", (category,)
+        ).fetchone()
+    return {"category": category, "count": row["n"]}
+
+
 @app.get("/api/predictions/{prediction_id}")
 def get_prediction(prediction_id: int):
     with get_conn() as conn:
