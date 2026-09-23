@@ -9,6 +9,15 @@ from .market_stats import compute_market_stats
 from .agents.research import ALL_ANALYSTS
 from .agents.debate import bull_agent, bear_agent, mediator_agent, judge_agent
 
+# Encontrado en producción (2026-09-23): un brote de 503 UNAVAILABLE ("alta demanda") de
+# Gemini hizo fallar los 15/15 candidatos de una corrida, cada uno tras ~10-14 min de
+# reintentos (11 llamadas por token) -- casi una hora entera sin ningun resultado, y
+# bloqueando el siguiente ciclo (GitHub Actions no corre dos en paralelo). Si varios
+# candidatos seguidos fallan por algo que NO es cuota diaria, es casi seguro una caida
+# temporal de Gemini, no candidatos malos uno tras otro -- mejor parar pronto y dejar que
+# el proximo ciclo automatico lo intente de nuevo.
+CONSECUTIVE_FAILURES_TO_ABORT = 3
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -295,6 +304,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                     + (f" ({skipped_unevaluable} excluidos por no tener precio disponible en ciclos anteriores.)" if skipped_unevaluable else "")
                     + (f" ({skipped_open} excluidos por ya tener un análisis pendiente de resolver, para diversificar el research en vez de repetir siempre los mismos símbolos.)" if skipped_open else ""))
 
+        consecutive_failures = 0
         for i, token in enumerate(candidates, start=1):
             symbol = token.get("symbol")
             _append_log(run_id, f"[{i}/{len(candidates)}] Investigando {symbol}...")
@@ -302,6 +312,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 data = research_token(token, run_id=run_id)
                 _save_entry(run_id, data)
                 _append_log(run_id, f"[{i}/{len(candidates)}] {symbol}: veredicto = {data.get('verdict')}")
+                consecutive_failures = 0
                 try:
                     notifications.notify_verdict(data)
                 except Exception:
@@ -310,6 +321,15 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 _append_log(run_id, f"[{i}/{len(candidates)}] {symbol}: ERROR - {e}")
                 if "cuota diaria" in str(e).lower():
                     _append_log(run_id, "Cuota diaria de Gemini agotada: se detiene el research de esta actualización (los descartados ya quedaron registrados).")
+                    break
+                consecutive_failures += 1
+                if consecutive_failures >= CONSECUTIVE_FAILURES_TO_ABORT:
+                    _append_log(
+                        run_id,
+                        f"{consecutive_failures} candidatos seguidos fallaron (no es cuota -- probablemente Gemini caído/con "
+                        "alta demanda ahora mismo). Se detiene el research de esta actualización en vez de reintentar los "
+                        "restantes durante otra hora sin resultado; los descartados ya quedaron registrados.",
+                    )
                     break
 
         _append_log(run_id, "Revisando resultado real de predicciones y descartes anteriores...")

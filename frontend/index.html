@@ -241,8 +241,11 @@
       <p class="desc">
         Cada actualización busca nuevos candidatos en Binance Alpha, analiza a fondo los mejores,
         y revisa el precio real de las predicciones anteriores &mdash; seleccionadas y descartadas &mdash;
-        para mantenerse calibrado.
+        para mantenerse calibrado. Ya corre sola cada 12h vía GitHub Actions; este botón solo
+        fuerza un ciclo extra (si ya hay uno en curso, el tuyo se encola detrás y arranca cuando
+        termine &mdash; GitHub Actions no corre dos a la vez).
       </p>
+      <div class="numbers-row" id="lastRunStat" style="margin-bottom:4px;"></div>
       <div class="row">
         <button class="btn" id="btnUpdate">Actualizar sistema</button>
         <span id="runStatus" class="muted"></span>
@@ -869,12 +872,25 @@ function numItem(num, lbl) {
   return `<div class="num-item"><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`;
 }
 
+function relativeTime(iso) {
+  if (!iso) return "-";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.round(diffMs / 60000);
+  if (min < 1) return "hace instantes";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `hace ${h}h`;
+  return `hace ${Math.round(h / 24)}d`;
+}
+
 async function refreshSummary() {
-  const [analyzed, discardedCount, diag] = await Promise.all([
+  const [analyzed, discardedCount, diag, runs] = await Promise.all([
     api("/api/predictions?category=analyzed&limit=2000").catch(() => []),
     api("/api/predictions/count?category=discarded").catch(() => null),
     api("/api/diagnoses/latest").catch(() => null),
+    api("/api/runs").catch(() => []),
   ]);
+  const lastRun = runs[0];
   const byVerdict = {};
   for (const v of VERDICT_ORDER) byVerdict[v] = 0;
   for (const p of analyzed) byVerdict[p.verdict] = (byVerdict[p.verdict] || 0) + 1;
@@ -896,53 +912,96 @@ async function refreshSummary() {
     numItem(hit20, "De esos, sí llegaron a +20%"),
     numItem(diag ? new Date(diag.created_at).toLocaleDateString() : "Ninguno", "Último diagnóstico de auto-corrección"),
   ].join("");
+  $("lastRunStat").innerHTML = lastRun
+    ? numItem(
+        lastRun.status === "running" ? "En curso" : relativeTime(lastRun.finished_at || lastRun.started_at),
+        lastRun.status === "running" ? `Corriendo desde ${relativeTime(lastRun.started_at)}` : `Última corrida (${lastRun.status === "done" ? "completa" : lastRun.status})`
+      )
+    : numItem("-", "Última corrida");
 }
 
 // Nota: este frontend local también sirve tal cual desde el Worker de Cloudflare (donde
 // /api/update dispara GitHub Actions en vez de correr el pipeline in-process). El polling
 // genérico de abajo funciona igual en ambos casos.
-$("btnUpdate").onclick = async () => {
+let updatePollHandle = null;
+
+function onCycleFinished() {
+  $("btnUpdate").disabled = false;
+  refreshPredictions();
+  refreshDiscarded();
+  refreshSummary();
+  api("/api/backtest/stats").then(renderStats).catch(() => renderStats({ evaluated_predictions: 0 }));
+  api("/api/backtest/filter-efficacy").then(renderEfficacy).catch(() => renderEfficacy(null));
+  api("/api/history/overview").then(renderHistory).catch(() => renderHistory(null));
+  loadDiagnosis();
+}
+
+// Sigue el progreso de una corrida -- sirve tanto para una que acabas de disparar como para
+// una que ya estaba corriendo cuando abriste el dashboard (evita el mensaje fantasma de
+// "esperando a que arranque" cuando en realidad ya hay algo corriendo, solo que tu clic
+// quedó encolado detrás porque GitHub Actions no corre dos ciclos a la vez).
+function watchRun(runId, { queuedNote } = {}) {
+  if (updatePollHandle) clearInterval(updatePollHandle);
   $("btnUpdate").disabled = true;
-  $("runStatus").textContent = "Lanzando actualización...";
+  $("log").style.display = "block";
+
+  const tick = async () => {
+    const run = await api(`/api/runs/${runId}`).catch(() => null);
+    if (!run) return;
+    const log = JSON.parse(run.log || "[]");
+    $("log").textContent = log.join("\n");
+    $("log").scrollTop = $("log").scrollHeight;
+    const elapsed = relativeTime(run.started_at).replace("hace ", "");
+    $("runStatus").textContent = run.status === "running"
+      ? `Corriendo desde ${elapsed}${queuedNote ? " — " + queuedNote : ""}`
+      : `Estado: ${run.status === "done" ? "completado" : run.status}`;
+    if (run.status !== "running") {
+      clearInterval(updatePollHandle);
+      updatePollHandle = null;
+      onCycleFinished();
+    }
+  };
+  tick();
+  updatePollHandle = setInterval(tick, 5000);
+}
+
+// Al abrir el dashboard, si ya hay una corrida en curso (automática o de otra pestaña),
+// muéstrala de inmediato en vez de dejar el log vacío hasta que le des clic al botón.
+async function checkActiveRunOnLoad() {
+  const runs = await api("/api/runs").catch(() => []);
+  if (runs[0] && runs[0].status === "running") watchRun(runs[0].id);
+}
+
+$("btnUpdate").onclick = async () => {
   const before = await api("/api/runs").catch(() => []);
-  const beforeIds = new Set(before.map((r) => r.id));
+  const activeRun = before[0] && before[0].status === "running" ? before[0] : null;
 
   try {
     await api("/api/update", { method: "POST" });
   } catch (e) {
     $("runStatus").textContent = e.message;
-    $("btnUpdate").disabled = false;
     return;
   }
 
-  $("runStatus").textContent = "Esperando a que arranque (puede tardar 1-2 min)...";
+  if (activeRun) {
+    // Ya hay una corriendo -- la tuya quedó encolada en GitHub Actions, no aparece como fila
+    // nueva hasta que la actual termine. Mostramos la que sí está corriendo mientras tanto.
+    watchRun(activeRun.id, { queuedNote: "tu clic quedó encolado en GitHub Actions y arrancará cuando esta termine" });
+    return;
+  }
+
+  $("btnUpdate").disabled = true;
+  $("runStatus").textContent = "Actualización lanzada, esperando a que arranque...";
   $("log").style.display = "block";
   $("log").textContent = "";
 
-  let currentRunId = null;
-  const poll = setInterval(async () => {
-    if (!currentRunId) {
-      const runs = await api("/api/runs").catch(() => []);
-      const fresh = runs.find((r) => !beforeIds.has(r.id));
-      if (!fresh) return;  // aun no aparece, seguir esperando
-      currentRunId = fresh.id;
-    }
-    const run = await api(`/api/runs/${currentRunId}`);
-    const log = JSON.parse(run.log || "[]");
-    $("log").textContent = log.join("\n");
-    $("log").scrollTop = $("log").scrollHeight;
-    $("runStatus").textContent = `Estado: ${run.status}`;
-    if (run.status !== "running") {
-      clearInterval(poll);
-      $("btnUpdate").disabled = false;
-      refreshPredictions();
-      refreshDiscarded();
-      refreshSummary();
-      renderStats(await api("/api/backtest/stats").catch(() => ({ evaluated_predictions: 0 })));
-      renderEfficacy(await api("/api/backtest/filter-efficacy").catch(() => null));
-      renderHistory(await api("/api/history/overview").catch(() => null));
-      loadDiagnosis();
-    }
+  const beforeIds = new Set(before.map((r) => r.id));
+  const waitForFresh = setInterval(async () => {
+    const runs = await api("/api/runs").catch(() => []);
+    const fresh = runs.find((r) => !beforeIds.has(r.id));
+    if (!fresh) return;
+    clearInterval(waitForFresh);
+    watchRun(fresh.id);
   }, 5000);
 };
 
@@ -1108,6 +1167,7 @@ $("btnSaveConfig").onclick = async () => {
   renderEfficacy(await api("/api/backtest/filter-efficacy").catch(() => null));
   renderHistory(await api("/api/history/overview").catch(() => null));
   loadDiagnosis();
+  checkActiveRunOnLoad();
 })();
 </script>
 </body>
