@@ -590,8 +590,11 @@ function projectionBox(p) {
       <div class="projection-box">
         <div class="projection-item"><div class="val">${fmtPrice(p.price_at_prediction)} &rarr; ${fmtPrice(p.price_after)}</div><div class="lbl">Precio: análisis &rarr; cierre día ${horizonDays}</div></div>
         <div class="projection-item"><div class="val">${fmtPctColored(p.max_return_pct)}</div><div class="lbl">Máximo alcanzado (real)</div></div>
+        ${p.return_at_day1_pct != null ? `<div class="projection-item"><div class="val">${fmtPctColored(p.return_at_day1_pct)}</div><div class="lbl">Retorno al día 1 (real)</div></div>` : ""}
+        ${p.return_at_day3_pct != null ? `<div class="projection-item"><div class="val">${fmtPctColored(p.return_at_day3_pct)}</div><div class="lbl">Retorno al día 3 (real)</div></div>` : ""}
         <div class="projection-item"><div class="val">${fmtPctColored(p.return_pct)}</div><div class="lbl">Al cierre del día ${horizonDays} (real)</div></div>
         <div class="projection-item"><div class="val">${hit}</div><div class="lbl">¿Llegó a +20&ndash;30%?</div></div>
+        ${p.volatility_pct != null ? `<div class="projection-item"><div class="val">${p.volatility_pct}%</div><div class="lbl">Volatilidad realizada</div></div>` : ""}
       </div>
     `;
   }
@@ -658,6 +661,7 @@ function renderPredictions(preds) {
         <div class="score-item"><div class="val">${p.confidence_score ?? "-"}</div><div class="lbl">Confidence</div></div>
         <div class="score-item"><div class="val">${p.earliness_score ?? "-"}</div><div class="lbl">Earliness</div></div>
       </div>
+      ${p.top10_holder_concentration_pct != null ? `<p class="muted" style="margin:2px 0 0;">Los top holders que reporta GoPlus controlan <strong>${p.top10_holder_concentration_pct}%</strong> del supply.</p>` : ""}
       ${projectionBox(p)}
       <div class="radar-row">
         ${radarSvg(p)}

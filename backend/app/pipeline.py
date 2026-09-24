@@ -69,7 +69,37 @@ def get_holder_history(symbol: str, limit: int = 8) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def holder_concentration_pct(security_report: dict | None) -> float | None:
+    """Suma el % de supply que controlan los top holders que GoPlus reporta (normalmente hasta
+    10-20, según el token -- no es un 'top 10' exacto garantizado, es lo que la API devuelve).
+    Encontrado en 'Mejoras cis.pdf' sección B.6/7: el reporte crudo de GoPlus ya trae esto (campo
+    'holders' con 'percent' por wallet) pero antes solo lo leía el analista como texto, sin un
+    número calculado y expuesto directo en el dashboard."""
+    if not security_report:
+        return None
+    holders = security_report.get("holders") or []
+    if not holders:
+        return None
+    try:
+        total = sum(float(h.get("percent", 0)) for h in holders)
+    except (TypeError, ValueError):
+        return None
+    return round(total * 100, 2)
+
+
 def build_context(token: dict, market_stats: dict, goplus_report: dict | None, holder_history: list[dict]) -> str:
+    """Auditoría de data leakage (2026-09-24, pedida en 'Mejoras cis.pdf' sección J): confirmado
+    que este contexto no puede filtrar información del futuro. Las 3 fuentes son siempre 'en
+    vivo al momento de esta llamada', nunca un dato re-leído con conocimiento posterior:
+      - token (Binance Alpha) y market_stats (klines, market_stats.py) se piden EN este
+        momento, sin rango de tiempo hacia adelante -- 'ahora' del research ES 'ahora' del dato.
+      - goplus_report igual, es una consulta en vivo al momento de la llamada.
+      - holder_history (get_holder_history) solo trae snapshots de predictions ANTERIORES
+        (created_at ya en el pasado respecto a esta corrida), nunca del futuro.
+    Y evaluate_prediction()/_price_path_since() en backtesting.py, simétricamente, filtra los
+    klines de evaluación a close_time_ms >= created_ms -- nunca usa una vela anterior al análisis
+    para "adivinar" el resultado. No hace falta ningún cambio de código para esto, ya estaba bien
+    por construcción; queda documentado explícitamente para que no se rompa sin querer después."""
     context = {
         "symbol": token.get("symbol"),
         "name": token.get("name"),
@@ -88,6 +118,7 @@ def build_context(token: dict, market_stats: dict, goplus_report: dict | None, h
         "hot_tag": token.get("hotTag"),
         "market_stats_7d": market_stats,
         "goplus_security_report": goplus_report or "no disponible para esta cadena/contrato",
+        "top_holders_concentration_pct": holder_concentration_pct(goplus_report),
         "historial_propio_de_ciclos_anteriores": holder_history or "sin ciclos anteriores registrados todavía para este símbolo",
     }
     return json.dumps(context, ensure_ascii=False, default=str)
@@ -139,7 +170,9 @@ def research_token(token: dict, run_id: str | None = None) -> dict:
         "liquidity": token.get("liquidity"),
         "volume_24h": token.get("volume24h"),
         "holders": token.get("holders"),
+        "source": token.get("source", "binance_alpha"),
         "rejection_reasons": None,
+        "top10_holder_concentration_pct": holder_concentration_pct(security_report),
         "opportunity_score": verdict.get("opportunity_score"),
         "risk_score": verdict.get("risk_score"),
         "confidence_score": verdict.get("confidence_score"),
@@ -176,7 +209,9 @@ def discarded_entry(token: dict, reasons: list[str]) -> dict:
         "liquidity": token.get("liquidity"),
         "volume_24h": token.get("volume24h"),
         "holders": token.get("holders"),
+        "source": token.get("source", "binance_alpha"),
         "rejection_reasons": json.dumps(reasons, ensure_ascii=False),
+        "top10_holder_concentration_pct": None,  # descartados no pasan por GoPlus
         "opportunity_score": None, "risk_score": None, "confidence_score": None,
         "earliness_score": None, "evidence_tier": None, "verdict": "Discarded (hard filter)",
         "bull_case": None, "bear_case": None, "mediator_notes": None,
@@ -192,18 +227,20 @@ def _save_entry(run_id: str, data: dict):
             """
             INSERT INTO predictions (
                 run_id, category, symbol, name, alpha_id, chain_name, contract_address,
-                price_at_prediction, market_cap, liquidity, volume_24h, holders, rejection_reasons,
+                price_at_prediction, market_cap, liquidity, volume_24h, holders, source,
+                rejection_reasons, top10_holder_concentration_pct,
                 opportunity_score, risk_score, confidence_score, earliness_score,
                 evidence_tier, verdict, bull_case, bear_case, mediator_notes,
                 key_evidence, main_risks, system_note, project_explainer, agent_findings, horizon_days,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
                 data["chain_name"], data["contract_address"], data["price_at_prediction"],
                 data["market_cap"], data["liquidity"], data["volume_24h"], data["holders"],
-                data["rejection_reasons"],
+                data["source"],
+                data["rejection_reasons"], data["top10_holder_concentration_pct"],
                 data["opportunity_score"], data["risk_score"], data["confidence_score"],
                 data["earliness_score"], data["evidence_tier"], data["verdict"],
                 data["bull_case"], data["bear_case"], data["mediator_notes"],

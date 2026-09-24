@@ -128,6 +128,12 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN current_return_pct REAL",
     "ALTER TABLE predictions ADD COLUMN price_checked_at TEXT",
     "ALTER TABLE predictions ADD COLUMN project_explainer TEXT",
+    # Batch 1 de "Mejoras cis.pdf" (2026-09-24):
+    "ALTER TABLE predictions ADD COLUMN return_at_day1_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN return_at_day3_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN volatility_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN top10_holder_concentration_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN source TEXT DEFAULT 'binance_alpha'",
 ]
 
 

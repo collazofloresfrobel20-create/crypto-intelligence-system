@@ -1,6 +1,7 @@
 """Backtesting continuo (spec sección 8), extendido para cubrir tanto los tokens analizados
 (pasaron los hard filters + research LLM) como los descartados (rechazados por hard filters),
 de forma que el sistema pueda auto-evaluar si sus propios filtros están bien calibrados."""
+import statistics
 from datetime import datetime, timezone
 
 from . import binance_alpha
@@ -43,6 +44,28 @@ def _price_path_since(alpha_id: str, created_at: str) -> list[tuple[float, float
     return path or None
 
 
+def _price_at_hours(path: list[tuple[float, float]], target_hours: float) -> float | None:
+    """Precio del punto del path más cercano a target_hours sin pasarse (None si el path
+    todavía no llega tan lejos). Reusa el mismo path ya descargado, sin llamadas extra."""
+    candidates = [p for p in path if p[0] <= target_hours]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p[0])[1]
+
+
+def _realized_volatility_pct(entry_price: float, path: list[tuple[float, float]]) -> float:
+    """Desviación estándar de los retornos punto a punto del path realmente observado (mismo
+    método que market_stats.compute_market_stats usa para el pre-análisis, aplicado aquí al
+    post-análisis)."""
+    closes = [entry_price] + [p[1] for p in path]
+    returns = [
+        (closes[i] - closes[i - 1]) / closes[i - 1]
+        for i in range(1, len(closes))
+        if closes[i - 1] > 0
+    ]
+    return round(statistics.pstdev(returns) * 100, 3) if len(returns) > 1 else 0.0
+
+
 def _classify(max_return_pct: float) -> str:
     if max_return_pct >= FULL_SUCCESS_THRESHOLD:
         return "yes"
@@ -70,6 +93,9 @@ def evaluate_prediction(pred: dict) -> dict | None:
     max_return_pct = ((max_price - entry_price) / entry_price) * 100
     max_drawdown_pct = ((min_price - entry_price) / entry_price) * 100
 
+    price_day1 = _price_at_hours(path, 24)
+    price_day3 = _price_at_hours(path, 72)
+
     return {
         "price_after": price_after,
         "max_price_reached": max_price,
@@ -78,6 +104,9 @@ def evaluate_prediction(pred: dict) -> dict | None:
         "max_drawdown_pct": round(max_drawdown_pct, 2),
         "time_to_max_hours": round(max_hours, 1),
         "thesis_result": _classify(max_return_pct),
+        "return_at_day1_pct": round(((price_day1 - entry_price) / entry_price) * 100, 2) if price_day1 else None,
+        "return_at_day3_pct": round(((price_day3 - entry_price) / entry_price) * 100, 2) if price_day3 else None,
+        "volatility_pct": _realized_volatility_pct(entry_price, path),
     }
 
 
@@ -117,13 +146,15 @@ def evaluate_due_predictions() -> int:
                 UPDATE predictions SET
                     price_after = ?, max_price_reached = ?, return_pct = ?, max_return_pct = ?,
                     max_drawdown_pct = ?, time_to_max_hours = ?, thesis_result = ?,
+                    return_at_day1_pct = ?, return_at_day3_pct = ?, volatility_pct = ?,
                     status = 'evaluated', evaluated_at = ?
                 WHERE id = ?
                 """,
                 (
                     result["price_after"], result["max_price_reached"], result["return_pct"],
                     result["max_return_pct"], result["max_drawdown_pct"], result["time_to_max_hours"],
-                    result["thesis_result"], datetime.now(timezone.utc).isoformat(), pred["id"],
+                    result["thesis_result"], result["return_at_day1_pct"], result["return_at_day3_pct"],
+                    result["volatility_pct"], datetime.now(timezone.utc).isoformat(), pred["id"],
                 ),
             )
         evaluated += 1
