@@ -4,7 +4,7 @@ de forma que el sistema pueda auto-evaluar si sus propios filtros están bien ca
 import statistics
 from datetime import datetime, timezone
 
-from . import binance_alpha
+from . import binance_alpha, dexscreener
 from .db import get_conn, row_to_dict
 
 # Umbrales de clasificación de tesis. La tesis "se cumple" si el movimiento MÁXIMO alcanzado
@@ -131,7 +131,8 @@ def evaluate_due_predictions() -> int:
         hours_since = _hours_since(pred["created_at"])
         if hours_since < pred["horizon_days"] * 24:
             continue
-        result = evaluate_prediction(pred)
+        is_binance = pred.get("source", "binance_alpha") == "binance_alpha"
+        result = evaluate_prediction(pred) if is_binance else evaluate_prediction_polled(pred)
         if not result:
             if hours_since >= (pred["horizon_days"] + UNEVALUABLE_GRACE_DAYS) * 24:
                 with get_conn() as conn:
@@ -176,25 +177,83 @@ def update_current_marks() -> int:
     for pred in rows:
         if _hours_since(pred["created_at"]) >= pred["horizon_days"] * 24:
             continue  # ya vencido: lo toma evaluate_due_predictions()
-        alpha_id = pred.get("alpha_id")
         entry_price = pred.get("price_at_prediction")
-        if not alpha_id or not entry_price:
+        if not entry_price:
             continue
-        path = _price_path_since(alpha_id, pred["created_at"])
-        if not path:
-            continue
-        current_price = path[-1][1]
+        is_binance = pred.get("source", "binance_alpha") == "binance_alpha"
+
+        if is_binance:
+            alpha_id = pred.get("alpha_id")
+            if not alpha_id:
+                continue
+            path = _price_path_since(alpha_id, pred["created_at"])
+            if not path:
+                continue
+            current_price = path[-1][1]
+        else:
+            # Sin historial de velas gratis (ver dexscreener.py): un solo punto de precio por
+            # ciclo, y se acumula el máximo/mínimo visto hasta ahora en running_max/min_price
+            # para que evaluate_prediction_polled() pueda cerrar el caso al vencer el horizonte.
+            chain, address = pred.get("chain_name"), pred.get("contract_address")
+            if not chain or not address:
+                continue
+            current_price = dexscreener.get_current_price(chain, address)
+            if current_price is None:
+                continue
+
         current_return_pct = ((current_price - entry_price) / entry_price) * 100
+        running_max = max(pred.get("running_max_price") or entry_price, current_price)
+        running_min = min(pred.get("running_min_price") or entry_price, current_price)
         with get_conn() as conn:
             conn.execute(
                 """
-                UPDATE predictions SET current_price = ?, current_return_pct = ?, price_checked_at = ?
+                UPDATE predictions SET current_price = ?, current_return_pct = ?, price_checked_at = ?,
+                    running_max_price = ?, running_min_price = ?
                 WHERE id = ?
                 """,
-                (current_price, round(current_return_pct, 2), datetime.now(timezone.utc).isoformat(), pred["id"]),
+                (current_price, round(current_return_pct, 2), datetime.now(timezone.utc).isoformat(),
+                 running_max, running_min, pred["id"]),
             )
         marked += 1
     return marked
+
+
+def evaluate_prediction_polled(pred: dict) -> dict | None:
+    """Evaluación para predicciones de fuentes sin historial de velas gratis (ej. DexScreener):
+    el 'máximo alcanzado' se construye por muestreo -- el valor más alto/bajo que
+    update_current_marks() fue viendo cada ciclo de 12h durante la semana (running_max/min_price),
+    en vez de un lookback horario completo como con evaluate_prediction()/Binance. Menos preciso
+    (resolución de 12h en vez de 1h, y no se puede saber EN QUÉ hora exacta llegó al máximo) pero
+    es lo único posible sin pagar por datos históricos. Los campos que de verdad no se pueden
+    saber con este método (hora exacta del máximo, retorno a día 1/3 exacto, volatilidad de la
+    serie completa) quedan en None a propósito, en vez de inventarse."""
+    chain, address = pred.get("chain_name"), pred.get("contract_address")
+    entry_price = pred.get("price_at_prediction")
+    if not chain or not address or not entry_price:
+        return None
+    current_price = dexscreener.get_current_price(chain, address)
+    if current_price is None:
+        return None
+
+    running_max = max(pred.get("running_max_price") or entry_price, current_price)
+    running_min = min(pred.get("running_min_price") or entry_price, current_price)
+
+    return_pct = ((current_price - entry_price) / entry_price) * 100
+    max_return_pct = ((running_max - entry_price) / entry_price) * 100
+    max_drawdown_pct = ((running_min - entry_price) / entry_price) * 100
+
+    return {
+        "price_after": current_price,
+        "max_price_reached": running_max,
+        "return_pct": round(return_pct, 2),
+        "max_return_pct": round(max_return_pct, 2),
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
+        "time_to_max_hours": None,
+        "thesis_result": _classify(max_return_pct),
+        "return_at_day1_pct": None,
+        "return_at_day3_pct": None,
+        "volatility_pct": None,
+    }
 
 
 def _confidence_bucket(score: int | None) -> str:

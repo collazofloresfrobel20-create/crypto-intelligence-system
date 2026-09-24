@@ -648,7 +648,7 @@ function renderPredictions(preds) {
     return `
     <div class="card" id="card-${p.id}">
       <div class="card-head">
-        <div><span class="sym">${p.symbol || "?"}</span><span class="name">${p.name || ""}</span></div>
+        <div><span class="sym">${p.symbol || "?"}</span><span class="name">${p.name || ""}</span><span class="pill-inline">${p.source === "dexscreener" ? "DexScreener" : "Binance Alpha"}</span></div>
         <div class="card-head-right">
           <span class="badge ${vclass}">${p.verdict || "N/A"}</span>
           ${statusPill(p)}
@@ -816,7 +816,7 @@ function renderRanking(list) {
   };
   box.innerHTML = `<div class="table-wrap"><table class="ranking-table">
     <thead><tr>
-      <th>#</th><th>Símbolo</th><th>Veredicto</th>
+      <th>#</th><th>Símbolo</th><th>Fuente</th><th>Veredicto</th>
       ${RANK_SORT_OPTIONS.map(([k, l]) => headerCell(k, l)).join("")}
       <th>Estado</th><th>Resultado (real o en vivo)</th>
     </tr></thead>
@@ -825,6 +825,7 @@ function renderRanking(list) {
         <tr data-goto="card-${p.id}">
           <td class="faint">${i + 1}</td>
           <td><strong>${p.symbol || "?"}</strong></td>
+          <td class="muted">${p.source === "dexscreener" ? "DexScreener" : "Binance Alpha"}</td>
           <td>${p.verdict || "N/A"}</td>
           <td>${p.opportunity_score ?? "-"}</td>
           <td>${p.risk_score ?? "-"}</td>

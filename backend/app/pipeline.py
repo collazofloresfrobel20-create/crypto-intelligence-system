@@ -2,7 +2,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from . import binance_alpha, goplus, filters, notifications
+from . import binance_alpha, dexscreener, goplus, filters, notifications
 from .config import settings
 from .db import get_conn
 from .market_stats import compute_market_stats
@@ -125,15 +125,35 @@ def build_context(token: dict, market_stats: dict, goplus_report: dict | None, h
 
 
 def research_token(token: dict, run_id: str | None = None) -> dict:
-    """Ejecuta research+debate+juez para un token. Devuelve el dict listo para guardar (category='analyzed')."""
+    """Ejecuta research+debate+juez para un token. Devuelve el dict listo para guardar
+    (category='analyzed', o 'discarded' si se confirma tarde que no cumple MIN_HOLDERS -- ver
+    abajo). El caller (_save_entry) guarda cualquiera de los dos uniformemente."""
     symbol = token.get("symbol")
     alpha_id = token.get("alphaId")
+    is_binance = token.get("source", "binance_alpha") == "binance_alpha"
 
-    market_stats = compute_market_stats(alpha_id) if alpha_id else {"error": "sin alphaId"}
+    market_stats = compute_market_stats(alpha_id) if alpha_id else dexscreener.to_market_stats(token)
     security_report = goplus.get_token_security(token.get("chainName"), token.get("contractAddress"))
     if security_report is None and run_id:
         _append_log(run_id, f"  aviso: sin reporte de GoPlus para {symbol} tras reintentos "
                               "(el Security Analyst queda sin su evidencia Tier 1 principal).")
+
+    # Fuentes no-Binance (ej. DexScreener) no traen 'holders' en el universo, así que el hard
+    # filter MIN_HOLDERS no lo pudo evaluar antes de llegar aquí. GoPlus sí lo trae -- se
+    # confirma ahora, antes de gastar las 11 llamadas de Gemini, no después.
+    if not is_binance and security_report:
+        holder_count = security_report.get("holder_count")
+        if holder_count is not None and int(holder_count) < settings.MIN_HOLDERS:
+            if run_id:
+                _append_log(run_id, f"  {symbol}: descartado tras confirmar holders ({holder_count} < "
+                                     f"{settings.MIN_HOLDERS}) vía GoPlus -- se salta el research de Gemini "
+                                     "(Binance Alpha ya trae este dato antes; esta fuente no).")
+            return discarded_entry(
+                {**token, "holders": holder_count},
+                [f"holders {holder_count} < mínimo {settings.MIN_HOLDERS} (confirmado vía GoPlus, "
+                 "esta fuente no trae holders en el universo inicial)"],
+            )
+
     holder_history = get_holder_history(symbol)
 
     context = build_context(token, market_stats, security_report, holder_history)
@@ -307,7 +327,17 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
     try:
         _append_log(run_id, "Descargando universo de tokens de Binance Alpha...")
         universe = binance_alpha.get_alpha_token_list()
-        _append_log(run_id, f"Universo total: {len(universe)} tokens.")
+        _append_log(run_id, f"Binance Alpha: {len(universe)} tokens.")
+
+        try:
+            dex_universe = dexscreener.get_universe("bsc")
+        except Exception as e:
+            dex_universe = []
+            _append_log(run_id, f"DexScreener (BSC) falló, se sigue solo con Binance Alpha: {e}")
+        if dex_universe:
+            _append_log(run_id, f"DexScreener (BSC, boosteados/nuevos): {len(dex_universe)} tokens adicionales.")
+        universe = universe + dex_universe
+        _append_log(run_id, f"Universo total combinado: {len(universe)} tokens.")
 
         already_tracked = _recently_tracked_symbols()
         unevaluable_symbols = _permanently_unevaluable_symbols()

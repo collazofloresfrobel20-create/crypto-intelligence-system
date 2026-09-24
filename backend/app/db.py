@@ -134,6 +134,8 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN volatility_pct REAL",
     "ALTER TABLE predictions ADD COLUMN top10_holder_concentration_pct REAL",
     "ALTER TABLE predictions ADD COLUMN source TEXT DEFAULT 'binance_alpha'",
+    "ALTER TABLE predictions ADD COLUMN running_max_price REAL",
+    "ALTER TABLE predictions ADD COLUMN running_min_price REAL",
 ]
 
 
