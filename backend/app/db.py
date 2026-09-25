@@ -116,6 +116,17 @@ CREATE TABLE IF NOT EXISTS system_config (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ml_models (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,          -- 'selector' (Fase 1) | 'calibration' (Fase 3)
+    trained_at TEXT NOT NULL,
+    n_samples INTEGER,
+    metrics TEXT,                -- JSON: precision/recall/PR-AUC/falsos negativos + benchmark
+    model_blob TEXT NOT NULL     -- joblib serializado, base64 (vive en Turso: los runners de
+                                  -- GitHub Actions son máquinas desechables sin disco persistente)
+);
+CREATE INDEX IF NOT EXISTS idx_ml_models_kind_trained ON ml_models (kind, trained_at);
 """
 
 _SCHEMA_STATEMENTS = [s.strip() for s in SCHEMA.split(";") if s.strip()]
@@ -139,6 +150,10 @@ _MIGRATIONS = [
     # Fase 0 (Grupo 3, 2026-09-24):
     "ALTER TABLE predictions ADD COLUMN rejection_margins TEXT",
     "ALTER TABLE predictions ADD COLUMN mediator_contradictions_count INTEGER",
+    # Fase 1 (clasificador ML, 2026-09-24): features de descubrimiento que antes no se
+    # persistían, necesarias para poder entrenar después contra el resultado real.
+    "ALTER TABLE predictions ADD COLUMN listing_age_days_at_discovery REAL",
+    "ALTER TABLE predictions ADD COLUMN pct_change_24h_at_discovery REAL",
 ]
 
 
@@ -216,7 +231,7 @@ def row_to_dict(row) -> dict:
     d = dict(row)
     for key in ("key_evidence", "main_risks", "agent_findings", "rejection_reasons",
                 "patterns_found", "proposed_adjustments", "applied_adjustments",
-                "rejection_margins"):
+                "rejection_margins", "metrics"):
         if d.get(key):
             try:
                 d[key] = json.loads(d[key])

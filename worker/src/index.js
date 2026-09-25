@@ -14,6 +14,8 @@ const ADJUSTABLE_PARAMS = {
   MAX_LISTING_AGE_DAYS: "int",
   MAX_CANDIDATES_PER_RUN: "int",
   MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: "int",
+  // Fase 1 (2026-09-24): decisión humana, nunca tocada por el flujo de auto-corrección.
+  ML_SCORING_MODE: "enum:shadow,active",
 };
 
 async function saveDynamicConfig(db, updates) {
@@ -22,8 +24,15 @@ async function saveDynamicConfig(db, updates) {
   for (const [key, rawValue] of Object.entries(updates)) {
     const kind = ADJUSTABLE_PARAMS[key];
     if (!kind || rawValue === null || rawValue === undefined) continue;
-    const value = kind === "int" ? parseInt(rawValue, 10) : parseFloat(rawValue);
-    if (Number.isNaN(value)) continue;
+    let value;
+    if (kind === "int") value = parseInt(rawValue, 10);
+    else if (kind === "float") value = parseFloat(rawValue);
+    else if (kind.startsWith("enum:")) {
+      const valid = kind.slice(5).split(",");
+      value = String(rawValue);
+      if (!valid.includes(value)) continue;
+    } else continue;
+    if (typeof value === "number" && Number.isNaN(value)) continue;
     await db.run(
       "INSERT INTO system_config (key, value, updated_at) VALUES (?, ?, ?) " +
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
@@ -270,6 +279,8 @@ async function handleApi(path, request, env) {
     for (const k of Object.keys(defaults)) cfg[k] = Number(cfg[k]);
     return json({
       ...cfg,
+      ML_SCORING_MODE: overrides.ML_SCORING_MODE || "shadow",
+      MIN_SAMPLES_FOR_ML: 30,
       PREDICTION_HORIZON_DAYS: 7,
       GEMINI_MODEL_FAST: "gemini-3.5-flash-lite",
       GEMINI_MODEL_SMART: "gemini-3.5-flash",
@@ -282,6 +293,17 @@ async function handleApi(path, request, env) {
     const body = await request.json().catch(() => ({}));
     const applied = await saveDynamicConfig(db, body);
     return json({ updated: applied });
+  }
+
+  const mlModelMatch = path.match(/^\/api\/ml-models\/([\w-]+)$/);
+  if (mlModelMatch && request.method === "GET") {
+    const kind = mlModelMatch[1];
+    const row = await db.one(
+      "SELECT kind, trained_at, n_samples, metrics FROM ml_models WHERE kind = ? ORDER BY trained_at DESC LIMIT 1",
+      [kind]
+    );
+    if (!row) return json({ detail: `aún no hay ningún modelo entrenado de tipo '${kind}'` }, 404);
+    return json(rowWithJson(row));
   }
 
   return json({ detail: "no encontrado" }, 404);

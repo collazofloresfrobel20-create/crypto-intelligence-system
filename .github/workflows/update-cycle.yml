@@ -25,6 +25,18 @@ jobs:
         working-directory: backend
         run: pip install -r requirements.txt
 
+      - name: Reentrenar modelo ML (si toca)
+        working-directory: backend
+        # Fase 1 (2026-09-24): corre en CADA ciclo (cada 12h) pero no hace nada la mayoría de
+        # las veces -- el guard de "una vez por semana" vive dentro del script mismo (revisa
+        # ml_models.trained_at), no aquí. Si algo falla aquí, no debe bloquear el ciclo
+        # principal de investigación -- por eso "continue-on-error".
+        continue-on-error: true
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: python scripts/retrain_model.py
+
       - name: Correr ciclo de actualizacion
         working-directory: backend
         env:

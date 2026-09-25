@@ -51,7 +51,7 @@ export function parseJsonField(value) {
 const JSON_FIELDS = [
   "key_evidence", "main_risks", "agent_findings", "rejection_reasons",
   "patterns_found", "proposed_adjustments", "applied_adjustments",
-  "rejection_margins",
+  "rejection_margins", "metrics",
 ];
 
 export function rowWithJson(row) {

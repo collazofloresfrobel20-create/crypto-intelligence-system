@@ -213,6 +213,8 @@ def research_token(token: dict, run_id: str | None = None) -> dict:
         "horizon_days": settings.PREDICTION_HORIZON_DAYS,
         "rejection_margins": None,  # solo aplica a descartados
         "mediator_contradictions_count": len(mediator.get("contradictions", []) or []),
+        "listing_age_days_at_discovery": filters.token_age_days(token),
+        "pct_change_24h_at_discovery": filters.pct_change_24h(token),
     }
 
 
@@ -243,6 +245,8 @@ def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None 
         "key_evidence": None, "main_risks": None, "system_note": None, "agent_findings": None,
         "project_explainer": None,
         "mediator_contradictions_count": None,
+        "listing_age_days_at_discovery": filters.token_age_days(token),
+        "pct_change_24h_at_discovery": filters.pct_change_24h(token),
         "horizon_days": settings.PREDICTION_HORIZON_DAYS,
     }
 
@@ -258,9 +262,10 @@ def _save_entry(run_id: str, data: dict):
                 opportunity_score, risk_score, confidence_score, earliness_score,
                 evidence_tier, verdict, bull_case, bear_case, mediator_notes,
                 mediator_contradictions_count,
+                listing_age_days_at_discovery, pct_change_24h_at_discovery,
                 key_evidence, main_risks, system_note, project_explainer, agent_findings, horizon_days,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?,?, ?, ?,?,?,?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?,?, ?, ?,?, ?,?,?,?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -272,6 +277,7 @@ def _save_entry(run_id: str, data: dict):
                 data["earliness_score"], data["evidence_tier"], data["verdict"],
                 data["bull_case"], data["bear_case"], data["mediator_notes"],
                 data["mediator_contradictions_count"],
+                data["listing_age_days_at_discovery"], data["pct_change_24h_at_discovery"],
                 data["key_evidence"], data["main_risks"], data["system_note"],
                 data["project_explainer"], data["agent_findings"], data["horizon_days"], _now(),
             ),
@@ -316,6 +322,33 @@ def _permanently_unevaluable_symbols() -> set[str]:
             "SELECT DISTINCT symbol FROM predictions WHERE status = 'unevaluable'"
         ).fetchall()
     return {r["symbol"] for r in rows}
+
+
+def _ml_features(token: dict) -> dict:
+    return {
+        "listing_age_days_at_discovery": filters.token_age_days(token),
+        "pct_change_24h_at_discovery": filters.pct_change_24h(token),
+        "volume_24h": token.get("volume24h"),
+        "liquidity": token.get("liquidity"),
+        "market_cap": token.get("marketCap"),
+    }
+
+
+def _rank_by_ml(tokens: list[dict]) -> list[dict] | None:
+    """Rankea por score del clasificador de la Fase 1 (ml_scoring.score_candidate). Devuelve
+    None si no hay modelo entrenado todavía (o falta alguna feature en TODOS los tokens) -- el
+    caller debe caer de vuelta a filters.rank_candidates() en ese caso, nunca lanzar un modelo
+    inexistente/mal entrenado a producción."""
+    from . import ml_scoring
+    scored = []
+    for t in tokens:
+        score = ml_scoring.score_candidate(_ml_features(t))
+        if score is not None:
+            scored.append((score, t))
+    if not scored:
+        return None
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [t for _, t in scored]
 
 
 def run_update_cycle(existing_run_id: str | None = None) -> str:
@@ -371,7 +404,31 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
 
         excluded_symbols = unevaluable_symbols | open_analysis_symbols
         eligible_survivors = [t for t, _, _ in survivors if t.get("symbol") not in excluded_symbols]
-        candidates = filters.rank_candidates(eligible_survivors, settings.MAX_CANDIDATES_PER_RUN)
+
+        # Fase 1 (2026-09-24): selección de candidatos por clasificador ML en vez de la
+        # heurística fija, con fallback obligatorio si no hay modelo/muestra todavía. En modo
+        # shadow (por defecto) el modelo NO decide nada todavía -- solo se loguea qué habría
+        # elegido, para comparar contra la selección real antes de activarlo de verdad.
+        heuristic_ranked = filters.rank_candidates(eligible_survivors, settings.MAX_CANDIDATES_PER_RUN)
+        ml_mode = getattr(settings, "ML_SCORING_MODE", "shadow")
+        if ml_mode == "active":
+            ml_ranked = _rank_by_ml(eligible_survivors)
+            if ml_ranked is not None:
+                candidates = ml_ranked[:settings.MAX_CANDIDATES_PER_RUN]
+                _append_log(run_id, f"Selección por clasificador ML (modo activo): {len(candidates)} candidatos.")
+            else:
+                candidates = heuristic_ranked
+                _append_log(run_id, "ML_SCORING_MODE=active pero no hay modelo entrenado todavía -- se usa el ranking heurístico de respaldo.")
+        else:
+            candidates = heuristic_ranked
+            ml_ranked = _rank_by_ml(eligible_survivors)
+            if ml_ranked is not None:
+                ml_top_symbols = [t.get("symbol") for t in ml_ranked[:settings.MAX_CANDIDATES_PER_RUN]]
+                heuristic_top_symbols = [t.get("symbol") for t in heuristic_ranked]
+                overlap = len(set(ml_top_symbols) & set(heuristic_top_symbols))
+                _append_log(run_id, f"[modo shadow] El clasificador ML habría elegido: {ml_top_symbols} "
+                            f"({overlap}/{len(heuristic_top_symbols)} coinciden con la selección heurística real que se usó).")
+
         candidates = [t for t in candidates if t.get("symbol") not in already_tracked]
         skipped_unevaluable = len([t for t, _, _ in survivors if t.get("symbol") in unevaluable_symbols])
         skipped_open = len([t for t, _, _ in survivors if t.get("symbol") in open_analysis_symbols])

@@ -404,6 +404,30 @@
     <hr class="rule">
 
     <section class="block">
+      <h2>Clasificador ML (selección de candidatos)</h2>
+      <p class="desc">
+        En vez de un umbral fijo, un modelo entrenado con el propio historial evaluado del
+        sistema puede rankear qué candidatos investigar a fondo. En modo <strong>shadow</strong>
+        (por defecto) el modelo NO decide nada todavía -- solo se loguea en cada ciclo qué
+        habría elegido, para comparar contra la selección real. Activarlo a
+        <strong>active</strong> es una decisión que deberías tomar solo después de revisar el
+        benchmark de abajo (precisión/recall del modelo contra el ranking heurístico actual
+        sobre el mismo conjunto de prueba), no antes.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Modo
+          <select id="cfgMlMode">
+            <option value="shadow">Shadow (observar, no decide)</option>
+            <option value="active">Activo (decide la selección real)</option>
+          </select>
+        </label>
+      </div>
+      <div id="mlBenchmarkBox" style="margin-top:14px;"><div class="empty-state">Aún no hay ningún modelo entrenado (hace falta más historial evaluado).</div></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
       <h2>Sistema</h2>
       <div class="table-wrap">
         <table><tbody id="modelInfo"></tbody></table>
@@ -1137,6 +1161,7 @@ async function loadDiagnosis() {
     $("diagnosisBox").innerHTML = '<div class="empty-state">Aún no hay diagnósticos.</div>';
   }
 }
+
 $("btnStats").onclick = async () => {
   renderStats(await api("/api/backtest/stats"));
   renderEfficacy(await api("/api/backtest/filter-efficacy"));
@@ -1151,6 +1176,7 @@ async function loadConfig() {
   $("cfgMaxAge").value = cfg.MAX_LISTING_AGE_DAYS;
   $("cfgMaxCandidates").value = cfg.MAX_CANDIDATES_PER_RUN;
   $("cfgMinConfidence").value = cfg.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY;
+  $("cfgMlMode").value = cfg.ML_SCORING_MODE || "shadow";
   $("modelInfo").innerHTML = `
     <tr><td>Modelo analistas</td><td>${cfg.GEMINI_MODEL_FAST}</td></tr>
     <tr><td>Modelo debate/juez</td><td>${cfg.GEMINI_MODEL_SMART}</td></tr>
@@ -1158,6 +1184,47 @@ async function loadConfig() {
     <tr><td>Actualización automática</td><td>cron de GitHub Actions cada 12h (ver .github/workflows/update-cycle.yml)</td></tr>
     <tr><td>API key de Gemini / Telegram</td><td>configuradas como secretos en GitHub Actions, no visibles desde aquí</td></tr>
     <tr><td>Bloqueo de login</td><td>${cfg.LOGIN_MAX_ATTEMPTS} intentos fallidos &rarr; ${cfg.LOGIN_LOCKOUT_MINUTES} min de bloqueo</td></tr>
+  `;
+  loadMlBenchmark();
+}
+
+function mlMetricRow(label, ml, heuristic) {
+  return `<tr><td>${label}</td><td>${ml}</td><td>${heuristic}</td></tr>`;
+}
+
+async function loadMlBenchmark() {
+  const box = $("mlBenchmarkBox");
+  let model;
+  try {
+    model = await api("/api/ml-models/selector");
+  } catch (e) {
+    box.innerHTML = '<div class="empty-state">Aún no hay ningún modelo entrenado (hace falta más historial evaluado).</div>';
+    return;
+  }
+  const m = model.metrics || {};
+  const bench = m.benchmark_vs_heuristic;
+  let benchHtml = '<p class="muted">Todavía no hay benchmark contra la heurística (conjunto de prueba insuficiente en el último reentrenamiento).</p>';
+  if (bench && bench.ml && bench.heuristic) {
+    benchHtml = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Métrica (sobre el mismo conjunto de prueba, fuera de muestra)</th><th>Clasificador ML</th><th>Ranking heurístico actual</th></tr></thead>
+          <tbody>
+            ${mlMetricRow("PR-AUC", bench.ml.pr_auc, bench.heuristic.pr_auc)}
+            ${mlMetricRow(`Precisión (top ${bench.ml.candidates_investigated})`, bench.ml.precision_top_n, bench.heuristic.precision_top_n)}
+            ${mlMetricRow("Recall", bench.ml.recall_top_n, bench.heuristic.recall_top_n)}
+            ${mlMetricRow("Oportunidades reales encontradas", bench.ml.strong_opportunities_found, bench.heuristic.strong_opportunities_found)}
+            ${mlMetricRow("Falsos negativos (se habrían perdido)", bench.ml.false_negatives, bench.heuristic.false_negatives)}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted" style="margin-top:8px;">Comparado sobre ${bench.n_eval} casos evaluados que el modelo NO usó para entrenar (${bench.positives_in_eval} de ellos sí fueron éxito real).</p>
+    `;
+  }
+  box.innerHTML = `
+    <p class="muted">Último modelo entrenado: ${new Date(model.trained_at).toLocaleString()} &middot; ${model.n_samples} casos evaluados usados en total (entrenamiento + validación).</p>
+    ${m.warning ? `<p class="disclaimer">${m.warning}</p>` : ""}
+    ${benchHtml}
   `;
 }
 
@@ -1170,6 +1237,7 @@ $("btnSaveConfig").onclick = async () => {
     MAX_LISTING_AGE_DAYS: parseInt($("cfgMaxAge").value),
     MAX_CANDIDATES_PER_RUN: parseInt($("cfgMaxCandidates").value),
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: parseInt($("cfgMinConfidence").value),
+    ML_SCORING_MODE: $("cfgMlMode").value,
   };
   await api("/api/config", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
   $("configStatus").textContent = "Guardado (aplica a la sesión actual del backend).";

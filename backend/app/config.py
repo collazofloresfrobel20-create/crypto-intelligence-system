@@ -69,6 +69,18 @@ class Settings:
     # ningún parámetro real que aplicar. Ahora es ajustable como los demás hard filters.
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY = _int("MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY", 40)
 
+    # --- Fase 1 (2026-09-24): clasificador ML como pre-filtro de candidatos ---
+    # Fallback obligatorio: con menos casos evaluados que esto no se entrena nada, el sistema
+    # sigue usando filters.rank_candidates() sin cambios -- no se lanza un modelo mal entrenado
+    # a producción solo porque "ya se puede".
+    MIN_SAMPLES_FOR_ML = _int("MIN_SAMPLES_FOR_ML", 30)
+    # "shadow" (por defecto): el modelo se entrena y se loguea qué habría elegido, pero la
+    # selección real de candidatos sigue siendo la heurística de siempre. "active": el modelo
+    # reemplaza a la heurística (con el mismo fallback si no hay modelo/muestra todavía). El
+    # cambio a "active" es una decisión humana desde el dashboard, informada por el benchmark
+    # de la Fase 1.5 -- nunca automática.
+    ML_SCORING_MODE = os.getenv("ML_SCORING_MODE", "shadow")
+
     # --- GoPlus (sin key requerida para uso básico) ---
     GOPLUS_APP_KEY = os.getenv("GOPLUS_APP_KEY", "")
     GOPLUS_APP_SECRET = os.getenv("GOPLUS_APP_SECRET", "")

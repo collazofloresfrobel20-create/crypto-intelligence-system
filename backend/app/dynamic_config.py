@@ -9,6 +9,18 @@ from datetime import datetime, timezone
 from .config import settings
 from .db import get_conn
 
+def _enum_caster(valid: set[str]):
+    """Constructor de "caster" para parámetros de texto con valores válidos limitados (ej.
+    'shadow'/'active') -- reusa el mismo mecanismo de excepción-para-descartar que ya usan
+    load_dynamic_config()/save_dynamic_config() para float/int, sin tener que tocar esa lógica."""
+    def caster(v):
+        v = str(v)
+        if v not in valid:
+            raise ValueError(f"valor inválido: {v!r} (válidos: {sorted(valid)})")
+        return v
+    return caster
+
+
 _ADJUSTABLE_PARAMS = {
     "MIN_LIQUIDITY_USD": float,
     "MIN_VOLUME_24H_USD": float,
@@ -17,6 +29,8 @@ _ADJUSTABLE_PARAMS = {
     "MAX_LISTING_AGE_DAYS": int,
     "MAX_CANDIDATES_PER_RUN": int,
     "MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY": int,
+    # Fase 1 (2026-09-24): decisión humana, nunca tocada por diagnosis.py (auto-corrección).
+    "ML_SCORING_MODE": _enum_caster({"shadow", "active"}),
 }
 
 

@@ -226,6 +226,8 @@ def get_config():
         "MAX_CANDIDATES_PER_RUN": settings.MAX_CANDIDATES_PER_RUN,
         "PREDICTION_HORIZON_DAYS": settings.PREDICTION_HORIZON_DAYS,
         "MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY": settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY,
+        "ML_SCORING_MODE": settings.ML_SCORING_MODE,
+        "MIN_SAMPLES_FOR_ML": settings.MIN_SAMPLES_FOR_ML,
         "GEMINI_MODEL_FAST": settings.GEMINI_MODEL_FAST,
         "GEMINI_MODEL_SMART": settings.GEMINI_MODEL_SMART,
         "GEMINI_ENABLE_SEARCH_GROUNDING": settings.GEMINI_ENABLE_SEARCH_GROUNDING,
@@ -246,6 +248,16 @@ class ConfigUpdateBody(BaseModel):
     MAX_LISTING_AGE_DAYS: int | None = None
     MAX_CANDIDATES_PER_RUN: int | None = None
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: int | None = None
+    ML_SCORING_MODE: str | None = None
+
+
+@app.get("/api/ml-models/{kind}")
+def api_latest_ml_model(kind: str):
+    from . import ml_scoring
+    meta = ml_scoring.latest_model_meta(kind)
+    if not meta:
+        raise HTTPException(404, f"aún no hay ningún modelo entrenado de tipo '{kind}'")
+    return meta
 
 
 @app.post("/api/config")

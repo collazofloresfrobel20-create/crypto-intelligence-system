@@ -11,6 +11,17 @@ def _num(v, default=0.0) -> float:
         return default
 
 
+def pct_change_24h(token: dict) -> float | None:
+    """Variación de precio 24h tal como la trae el token en el momento del descubrimiento."""
+    v = token.get("percentChange24h")
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def token_age_days(token: dict) -> float | None:
     """Antigüedad del listado en días, o None si el token no trae 'listingTime'."""
     listing_time = token.get("listingTime")
@@ -93,18 +104,23 @@ def passes_hard_filters_with_margins(token: dict) -> tuple[bool, list[str], list
     return (len(reasons) == 0, reasons, margins)
 
 
+def heuristic_score(t: dict) -> float:
+    """Score heurístico pre-Earliness (el ranking de siempre, antes del clasificador ML de la
+    Fase 1): prioriza volumen relativo a market cap (proxy de momentum temprano) y variación de
+    precio positiva. Expuesto por separado de rank_candidates() para poder comparar este método
+    contra el clasificador ML en igualdad de condiciones (Fase 1.5, benchmark_against_heuristic
+    en ml_scoring.py)."""
+    mc = _num(t.get("marketCap"), 1)
+    vol = _num(t.get("volume24h"))
+    change = _num(t.get("percentChange24h"))
+    vol_ratio = vol / mc if mc > 0 else 0
+    return vol_ratio * 100 + max(change, 0)
+
+
 def rank_candidates(tokens: list[dict], limit: int) -> list[dict]:
     """
-    Ranking simple pre-Earliness para no gastar llamadas de Gemini en todo el universo:
-    prioriza volumen relativo a market cap (proxy de momentum temprano) y recencia de listado.
-    El Earliness Score real (LLM) se calcula después, ya con el research profundo.
+    Ranking simple pre-Earliness para no gastar llamadas de Gemini en todo el universo. El
+    Earliness Score real (LLM) se calcula después, ya con el research profundo.
     """
-    def score(t: dict) -> float:
-        mc = _num(t.get("marketCap"), 1)
-        vol = _num(t.get("volume24h"))
-        change = _num(t.get("percentChange24h"))
-        vol_ratio = vol / mc if mc > 0 else 0
-        return vol_ratio * 100 + max(change, 0)
-
-    ranked = sorted(tokens, key=score, reverse=True)
+    ranked = sorted(tokens, key=heuristic_score, reverse=True)
     return ranked[:limit]
