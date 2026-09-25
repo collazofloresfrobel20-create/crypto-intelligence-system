@@ -297,9 +297,12 @@ def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None 
     }
 
 
-def _save_entry(run_id: str, data: dict):
+def _save_entry(run_id: str, data: dict) -> int | None:
+    """Devuelve el id de la fila insertada (Fase 5: se usa para marcar notified_at después de
+    un envío exitoso a Telegram, sin volver a consultar la fila). Ambos backends (SQLite local
+    y el _RemoteResult de Turso) exponen .lastrowid en el resultado de .execute()."""
     with get_conn() as conn:
-        conn.execute(
+        result = conn.execute(
             """
             INSERT INTO predictions (
                 run_id, category, symbol, name, alpha_id, chain_name, contract_address,
@@ -339,6 +342,7 @@ def _save_entry(run_id: str, data: dict):
                 data["project_explainer"], data["agent_findings"], data["horizon_days"], _now(),
             ),
         )
+        return result.lastrowid
 
 
 def _recently_tracked_symbols(hours: int = 20) -> set[str]:
@@ -539,11 +543,13 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 addr = token.get("contractAddress")
                 cached_report = security_cache.get(addr, _UNSET) if addr else _UNSET
                 data = research_token(token, run_id=run_id, security_report=cached_report)
-                _save_entry(run_id, data)
+                pred_id = _save_entry(run_id, data)
                 _append_log(run_id, f"[{i}/{len(candidates)}] {symbol}: veredicto = {data.get('verdict')}")
                 consecutive_failures = 0
                 try:
-                    notifications.notify_verdict(data)
+                    if notifications.notify_verdict(data) and pred_id is not None:
+                        with get_conn() as conn:
+                            conn.execute("UPDATE predictions SET notified_at = ? WHERE id = ?", (_now(), pred_id))
                 except Exception:
                     pass  # una alerta fallida no debe tumbar el ciclo
             except Exception as e:

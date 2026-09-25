@@ -1,5 +1,16 @@
 """JSON schemas (formato aceptado por google-genai response_schema) para cada agente."""
 
+# Única fuente de verdad de los 5 veredictos posibles -- reusado por JUDGE_SCHEMA más abajo y,
+# fuera de este archivo, por dynamic_config.py (Fase 5, whitelist de TELEGRAM_NOTIFY_VERDICTS)
+# y main.py (expuesto en /api/config para que el dashboard no lo hardcodee una segunda vez).
+VERDICT_VALUES = [
+    "Strong Opportunity",
+    "Watchlist",
+    "High Risk / Speculative",
+    "Reject",
+    "Insufficient Evidence",
+]
+
 ANALYST_SCHEMA = {
     "type": "object",
     "properties": {
@@ -60,13 +71,7 @@ JUDGE_SCHEMA = {
         "evidence_tier": {"type": "string"},
         "verdict": {
             "type": "string",
-            "enum": [
-                "Strong Opportunity",
-                "Watchlist",
-                "High Risk / Speculative",
-                "Reject",
-                "Insufficient Evidence",
-            ],
+            "enum": VERDICT_VALUES,
         },
         "bull_case_summary": {"type": "string"},
         "bear_case_summary": {"type": "string"},

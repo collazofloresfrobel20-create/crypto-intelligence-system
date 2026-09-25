@@ -453,6 +453,19 @@
     <hr class="rule">
 
     <section class="block">
+      <h2>Alertas por Telegram</h2>
+      <p class="desc">
+        Qué veredictos disparan un mensaje de Telegram (si están configurados
+        TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID). Por defecto solo "Strong Opportunity". Cada
+        predicción solo notifica una vez -- ampliar esto no genera avisos repetidos del mismo
+        símbolo mientras su análisis siga abierto.
+      </p>
+      <div id="cfgTelegramVerdicts" class="form-grid"></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
       <h2>Sistema</h2>
       <div class="table-wrap">
         <table><tbody id="modelInfo"></tbody></table>
@@ -1229,6 +1242,14 @@ async function loadConfig() {
   $("cfgMinConfidence").value = cfg.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY;
   $("cfgMlMode").value = cfg.ML_SCORING_MODE || "shadow";
   $("cfgEnsembleMode").value = cfg.ENSEMBLE_JUDGE_MODE || "shadow";
+  const verdictValues = cfg.VERDICT_VALUES || ["Strong Opportunity", "Watchlist", "High Risk / Speculative", "Reject", "Insufficient Evidence"];
+  const notifyVerdicts = new Set(cfg.TELEGRAM_NOTIFY_VERDICTS || ["Strong Opportunity"]);
+  $("cfgTelegramVerdicts").innerHTML = verdictValues.map((v, i) => `
+    <label class="cfg" style="flex-direction:row;align-items:center;gap:8px;">
+      <input type="checkbox" class="cfgTelegramVerdict" value="${v}" id="cfgTelegramVerdict${i}" ${notifyVerdicts.has(v) ? "checked" : ""}>
+      ${v}
+    </label>
+  `).join("");
   $("modelInfo").innerHTML = `
     <tr><td>Modelo analistas</td><td>${cfg.GEMINI_MODEL_FAST}</td></tr>
     <tr><td>Modelo debate/juez</td><td>${cfg.GEMINI_MODEL_SMART}</td></tr>
@@ -1291,6 +1312,7 @@ $("btnSaveConfig").onclick = async () => {
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: parseInt($("cfgMinConfidence").value),
     ML_SCORING_MODE: $("cfgMlMode").value,
     ENSEMBLE_JUDGE_MODE: $("cfgEnsembleMode").value,
+    TELEGRAM_NOTIFY_VERDICTS: Array.from(document.querySelectorAll(".cfgTelegramVerdict:checked")).map(el => el.value),
   };
   await api("/api/config", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
   $("configStatus").textContent = "Guardado (aplica a la sesión actual del backend).";

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from .db import init_db, get_conn, row_to_dict
 from . import pipeline, backtesting, diagnosis, auth, scheduler, dynamic_config
 from .config import settings
+from .agents.schemas import VERDICT_VALUES
 
 app = FastAPI(title="Crypto Intelligence System (CIS)")
 
@@ -230,6 +231,8 @@ def get_config():
         "MIN_SAMPLES_FOR_ML": settings.MIN_SAMPLES_FOR_ML,
         "ENSEMBLE_JUDGE_MODE": settings.ENSEMBLE_JUDGE_MODE,
         "groq_api_key_configured": bool(settings.GROQ_API_KEY),
+        "TELEGRAM_NOTIFY_VERDICTS": settings.TELEGRAM_NOTIFY_VERDICTS,
+        "VERDICT_VALUES": VERDICT_VALUES,
         "GEMINI_MODEL_FAST": settings.GEMINI_MODEL_FAST,
         "GEMINI_MODEL_SMART": settings.GEMINI_MODEL_SMART,
         "GEMINI_ENABLE_SEARCH_GROUNDING": settings.GEMINI_ENABLE_SEARCH_GROUNDING,
@@ -252,6 +255,7 @@ class ConfigUpdateBody(BaseModel):
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: int | None = None
     ML_SCORING_MODE: str | None = None
     ENSEMBLE_JUDGE_MODE: str | None = None
+    TELEGRAM_NOTIFY_VERDICTS: list[str] | None = None
 
 
 @app.get("/api/ml-models/{kind}")

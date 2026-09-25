@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from .config import settings
 from .db import get_conn
+from .agents.schemas import VERDICT_VALUES
 
 def _enum_caster(valid: set[str]):
     """Constructor de "caster" para parámetros de texto con valores válidos limitados (ej.
@@ -18,6 +19,21 @@ def _enum_caster(valid: set[str]):
         if v not in valid:
             raise ValueError(f"valor inválido: {v!r} (válidos: {sorted(valid)})")
         return v
+    return caster
+
+
+def _multi_enum_caster(valid: set[str]):
+    """Como _enum_caster pero para una LISTA de valores (ej. TELEGRAM_NOTIFY_VERDICTS) -- acepta
+    tanto una lista de Python como una cadena separada por comas (así sirve tanto para lo que
+    manda el dashboard como para lo que ya está guardado en system_config). Devuelve una lista
+    de Python, no una cadena, para que notifications.py pueda seguir usando "in" sobre una
+    lista sin cambios -- el join a cadena para guardar en la tabla vive en _SERIALIZERS."""
+    def caster(v):
+        items = [str(x).strip() for x in v] if isinstance(v, list) else [x.strip() for x in str(v).split(",")]
+        items = [x for x in items if x in valid]
+        if not items:
+            raise ValueError("ningún valor válido en la lista")
+        return items
     return caster
 
 
@@ -33,6 +49,15 @@ _ADJUSTABLE_PARAMS = {
     "ML_SCORING_MODE": _enum_caster({"shadow", "active"}),
     # Fase 2 (2026-09-24): idem -- decisión humana, nunca tocada por diagnosis.py.
     "ENSEMBLE_JUDGE_MODE": _enum_caster({"shadow", "active"}),
+    # Fase 5 (2026-09-24): idem -- qué veredictos disparan Telegram, decisión humana.
+    "TELEGRAM_NOTIFY_VERDICTS": _multi_enum_caster(set(VERDICT_VALUES)),
+}
+
+# Casters cuyo valor casteado no es una cadena simple necesitan su propia forma de guardarse en
+# system_config (columna TEXT) -- por defecto se usa str(casted), que funciona para
+# float/int/enum pero no para una lista de Python.
+_SERIALIZERS = {
+    "TELEGRAM_NOTIFY_VERDICTS": lambda v: ",".join(v),
 }
 
 
@@ -64,10 +89,11 @@ def save_dynamic_config(updates: dict) -> dict:
                 casted = cast(value)
             except (TypeError, ValueError):
                 continue
+            serialize = _SERIALIZERS.get(key, str)
             conn.execute(
                 "INSERT INTO system_config (key, value, updated_at) VALUES (?, ?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-                (key, str(casted), now),
+                (key, serialize(casted), now),
             )
             setattr(settings, key, casted)
             applied[key] = casted

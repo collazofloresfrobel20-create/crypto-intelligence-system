@@ -6,6 +6,11 @@ import { getPerformanceStats, getFilterEfficacyStats, getHistoryOverview } from 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
 
+// Única fuente de verdad de los 5 veredictos posibles en este archivo (espejo de
+// agents/schemas.py::VERDICT_VALUES en el backend Python -- no hay forma de compartir el
+// literal entre Python y JS, así que se mantienen sincronizados a mano).
+const VERDICT_VALUES = ["Strong Opportunity", "Watchlist", "High Risk / Speculative", "Reject", "Insufficient Evidence"];
+
 const ADJUSTABLE_PARAMS = {
   MIN_LIQUIDITY_USD: "float",
   MIN_VOLUME_24H_USD: "float",
@@ -17,6 +22,8 @@ const ADJUSTABLE_PARAMS = {
   // Fase 1/2 (2026-09-24): decisión humana, nunca tocada por el flujo de auto-corrección.
   ML_SCORING_MODE: "enum:shadow,active",
   ENSEMBLE_JUDGE_MODE: "enum:shadow,active",
+  // Fase 5 (2026-09-24): idem -- qué veredictos disparan Telegram, decisión humana.
+  TELEGRAM_NOTIFY_VERDICTS: "multienum:" + VERDICT_VALUES.join(","),
 };
 
 async function saveDynamicConfig(db, updates) {
@@ -29,11 +36,18 @@ async function saveDynamicConfig(db, updates) {
     if (kind === "int") value = parseInt(rawValue, 10);
     else if (kind === "float") value = parseFloat(rawValue);
     else if (kind.startsWith("enum:")) {
-      const valid = kind.slice(5).split(",");
+      const valid = kind.slice("enum:".length).split(",");
       value = String(rawValue);
       if (!valid.includes(value)) continue;
+    } else if (kind.startsWith("multienum:")) {
+      const valid = kind.slice("multienum:".length).split(",");
+      const items = Array.isArray(rawValue) ? rawValue.map(String) : String(rawValue).split(",").map((s) => s.trim());
+      value = items.filter((x) => valid.includes(x));
+      if (!value.length) continue;
     } else continue;
     if (typeof value === "number" && Number.isNaN(value)) continue;
+    // String([...]) une con comas de forma nativa en JS -- mismo formato que ya usa
+    // config.py del lado de Python para parsear TELEGRAM_NOTIFY_VERDICTS.
     await db.run(
       "INSERT INTO system_config (key, value, updated_at) VALUES (?, ?, ?) " +
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
@@ -283,6 +297,10 @@ async function handleApi(path, request, env) {
       ML_SCORING_MODE: overrides.ML_SCORING_MODE || "shadow",
       MIN_SAMPLES_FOR_ML: 30,
       ENSEMBLE_JUDGE_MODE: overrides.ENSEMBLE_JUDGE_MODE || "shadow",
+      TELEGRAM_NOTIFY_VERDICTS: overrides.TELEGRAM_NOTIFY_VERDICTS
+        ? overrides.TELEGRAM_NOTIFY_VERDICTS.split(",")
+        : ["Strong Opportunity"],
+      VERDICT_VALUES,
       PREDICTION_HORIZON_DAYS: 7,
       GEMINI_MODEL_FAST: "gemini-3.5-flash-lite",
       GEMINI_MODEL_SMART: "gemini-3.5-flash",

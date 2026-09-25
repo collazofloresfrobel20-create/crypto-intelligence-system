@@ -173,6 +173,9 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN lp_holders_locked_pct REAL",
     "ALTER TABLE predictions ADD COLUMN is_honeypot INTEGER",
     "ALTER TABLE predictions ADD COLUMN is_mintable INTEGER",
+    # Fase 5 (alertas + dedup, 2026-09-24): guardia de idempotencia explícita para Telegram --
+    # defensiva, ante futuros cambios en la lógica de exclusión de re-research.
+    "ALTER TABLE predictions ADD COLUMN notified_at TEXT",
 ]
 
 
