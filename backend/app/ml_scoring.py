@@ -19,6 +19,11 @@ fuera del entrenamiento, como prueba honesta fuera de muestra.
 Todo modelo entrenado se guarda en la tabla `ml_models` (Turso/SQLite), nunca en el repo: los
 runners de GitHub Actions son máquinas desechables sin disco persistente ni permisos de
 escritura al repo -- Turso ya es la única fuente de verdad persistente de todo el sistema.
+
+Fase 3 (2026-09-24): este módulo también entrena la curva de calibración del confidence_score
+(kind='calibration' en `ml_models`, misma tabla que el selector de la Fase 1) -- corrige, con
+IsotonicRegression, qué tan honesto es el confidence_score que el Juez ya produce hoy, sin
+cambiar selección ni ranking de candidatos.
 """
 import base64
 import io
@@ -247,6 +252,59 @@ def load_model(kind: str):
         return None
     raw = base64.b64decode(row["model_blob"])
     return joblib.load(io.BytesIO(raw))
+
+
+def build_calibration_set() -> list[dict]:
+    """Fase 3 (2026-09-24): casos evaluados con confidence_score y resultado real, para ajustar
+    la curva de calibración -- misma fuente que backtesting.get_performance_stats() (analyzed +
+    evaluated), no una consulta nueva con criterios distintos."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT confidence_score, thesis_result
+            FROM predictions
+            WHERE status = 'evaluated' AND category = 'analyzed'
+              AND confidence_score IS NOT NULL AND thesis_result IS NOT NULL
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _hit_weight(thesis_result: str) -> float:
+    """Mismo criterio de 'acierto' que ya usa backtesting.get_performance_stats() en su fórmula
+    de success_rate_pct (yes=1, partial=0.5, no=0) -- la calibración tiene que corregir la
+    MISMA definición de acierto que el resto del dashboard ya muestra, no inventar una segunda."""
+    return {"yes": 1.0, "partial": 0.5, "no": 0.0}.get(thesis_result, 0.0)
+
+
+def train_calibration_model(rows: list[dict]):
+    """Ajusta IsotonicRegression: confidence_score crudo (0-100) -> tasa de acierto empírica.
+    Isotonic (monótona no-decreciente) porque la única corrección que tiene sentido aquí es
+    'un confidence más alto nunca debería implicar peor tasa de acierto real' -- no se le pide
+    a este modelo que aprenda una forma arbitraria, solo que enderece la curva."""
+    from sklearn.isotonic import IsotonicRegression
+
+    X = [r["confidence_score"] for r in rows]
+    y = [_hit_weight(r["thesis_result"]) for r in rows]
+    model = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+    model.fit(X, y)
+    metrics = {"n_samples": len(rows)}
+    return model, metrics
+
+
+def calibrate_confidence(confidence_score) -> float | None:
+    """Devuelve el confidence_score calibrado (0-100, misma escala que el original) o None si
+    no hay modelo de calibración todavía o no se pasó un confidence_score -- el caller debe
+    dejar la columna en NULL en ese caso, nunca inventar un valor."""
+    if confidence_score is None:
+        return None
+    model = load_model("calibration")
+    if model is None:
+        return None
+    try:
+        return round(float(model.predict([float(confidence_score)])[0]) * 100, 1)
+    except (TypeError, ValueError):
+        return None
 
 
 def latest_model_meta(kind: str) -> dict | None:

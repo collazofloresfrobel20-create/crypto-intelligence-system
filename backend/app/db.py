@@ -162,6 +162,9 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN secondary_judge_confidence_score INTEGER",
     "ALTER TABLE predictions ADD COLUMN secondary_judge_earliness_score INTEGER",
     "ALTER TABLE predictions ADD COLUMN judge_agreement INTEGER",
+    # Fase 3 (curva de calibración, 2026-09-24): confidence_score corregido contra el acierto
+    # real histórico -- se guarda aparte para poder mostrar crudo y calibrado juntos.
+    "ALTER TABLE predictions ADD COLUMN confidence_score_calibrated REAL",
 ]
 
 

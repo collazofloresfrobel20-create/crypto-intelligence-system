@@ -18,6 +18,7 @@ from app.db import init_db
 from app.dynamic_config import load_dynamic_config
 from app.config import settings
 from app import ml_scoring
+from app.backtesting import MIN_SAMPLE_FOR_CONFIDENCE
 
 RETRAIN_INTERVAL_DAYS = 6
 
@@ -70,11 +71,20 @@ def retrain_selector():
 
 def retrain_calibration():
     """Fase 3: curva de calibración del confidence_score, misma tabla ml_models, mismo guard
-    de frecuencia. Implementación completa en la Fase 3 del plan -- este bloque queda listo
-    para conectarse ahí sin tener que volver a tocar el workflow ni el guard de reentrenamiento."""
+    de frecuencia. Reusa MIN_SAMPLE_FOR_CONFIDENCE de backtesting.py -- no se inventa un umbral
+    nuevo para decidir cuándo hay "suficiente" historial."""
     if not _due("calibration"):
         return
-    print("[calibration] Fase 3 todavía no implementada -- nada que entrenar por ahora.")
+
+    rows = ml_scoring.build_calibration_set()
+    if len(rows) < MIN_SAMPLE_FOR_CONFIDENCE:
+        print(f"[calibration] Solo {len(rows)} casos evaluados con confidence_score "
+              f"(< {MIN_SAMPLE_FOR_CONFIDENCE} mínimo): no se ajusta todavía.")
+        return
+
+    model, metrics = ml_scoring.train_calibration_model(rows)
+    ml_scoring.save_model(model, "calibration", len(rows), metrics)
+    print(f"[calibration] Curva de calibración reentrenada con {len(rows)} casos. Métricas: {metrics}")
 
 
 if __name__ == "__main__":

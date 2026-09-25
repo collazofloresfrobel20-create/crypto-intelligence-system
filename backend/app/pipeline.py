@@ -2,7 +2,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from . import binance_alpha, dexscreener, goplus, filters, notifications
+from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring
 from .config import settings
 from .db import get_conn
 from .market_stats import compute_market_stats
@@ -223,6 +223,7 @@ def research_token(token: dict, run_id: str | None = None) -> dict:
         "secondary_judge_confidence_score": verdict.get("secondary_judge_confidence_score"),
         "secondary_judge_earliness_score": verdict.get("secondary_judge_earliness_score"),
         "judge_agreement": verdict.get("judge_agreement"),
+        "confidence_score_calibrated": ml_scoring.calibrate_confidence(verdict.get("confidence_score")),
         "bull_case": bull.get("thesis"),
         "bear_case": bear.get("thesis"),
         "mediator_notes": mediator.get("surviving_conclusion"),
@@ -268,6 +269,7 @@ def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None 
         "secondary_judge_verdict": None, "secondary_judge_opportunity_score": None,
         "secondary_judge_risk_score": None, "secondary_judge_confidence_score": None,
         "secondary_judge_earliness_score": None, "judge_agreement": None,
+        "confidence_score_calibrated": None,
         "bull_case": None, "bear_case": None, "mediator_notes": None,
         "key_evidence": None, "main_risks": None, "system_note": None, "agent_findings": None,
         "project_explainer": None,
@@ -290,13 +292,13 @@ def _save_entry(run_id: str, data: dict):
                 evidence_tier, verdict,
                 secondary_judge_verdict, secondary_judge_opportunity_score,
                 secondary_judge_risk_score, secondary_judge_confidence_score,
-                secondary_judge_earliness_score, judge_agreement,
+                secondary_judge_earliness_score, judge_agreement, confidence_score_calibrated,
                 bull_case, bear_case, mediator_notes,
                 mediator_contradictions_count,
                 listing_age_days_at_discovery, pct_change_24h_at_discovery,
                 key_evidence, main_risks, system_note, project_explainer, agent_findings, horizon_days,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -309,6 +311,7 @@ def _save_entry(run_id: str, data: dict):
                 data["secondary_judge_verdict"], data["secondary_judge_opportunity_score"],
                 data["secondary_judge_risk_score"], data["secondary_judge_confidence_score"],
                 data["secondary_judge_earliness_score"], data["judge_agreement"],
+                data["confidence_score_calibrated"],
                 data["bull_case"], data["bear_case"], data["mediator_notes"],
                 data["mediator_contradictions_count"],
                 data["listing_age_days_at_discovery"], data["pct_change_24h_at_discovery"],
@@ -373,7 +376,6 @@ def _rank_by_ml(tokens: list[dict]) -> list[dict] | None:
     None si no hay modelo entrenado todavía (o falta alguna feature en TODOS los tokens) -- el
     caller debe caer de vuelta a filters.rank_candidates() en ese caso, nunca lanzar un modelo
     inexistente/mal entrenado a producción."""
-    from . import ml_scoring
     scored = []
     for t in tokens:
         score = ml_scoring.score_candidate(_ml_features(t))

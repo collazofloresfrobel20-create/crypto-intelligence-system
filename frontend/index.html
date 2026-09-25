@@ -707,7 +707,7 @@ function renderPredictions(preds) {
       <div class="scores">
         <div class="score-item"><div class="val">${p.opportunity_score ?? "-"}</div><div class="lbl">Opportunity</div></div>
         <div class="score-item"><div class="val">${p.risk_score ?? "-"}</div><div class="lbl">Risk</div></div>
-        <div class="score-item"><div class="val">${p.confidence_score ?? "-"}</div><div class="lbl">Confidence</div></div>
+        <div class="score-item"><div class="val">${p.confidence_score ?? "-"}</div><div class="lbl">Confidence</div>${p.confidence_score_calibrated != null ? `<div class="muted" style="font-size:9.5px;margin-top:1px;">calibrado: ${p.confidence_score_calibrated}</div>` : ""}</div>
         <div class="score-item"><div class="val">${p.earliness_score ?? "-"}</div><div class="lbl">Earliness</div></div>
       </div>
       ${p.top10_holder_concentration_pct != null ? `<p class="muted" style="margin:2px 0 0;">Los top holders que reporta GoPlus controlan <strong>${p.top10_holder_concentration_pct}%</strong> del supply.</p>` : ""}
