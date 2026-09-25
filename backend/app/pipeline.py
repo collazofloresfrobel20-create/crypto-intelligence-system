@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -17,6 +18,11 @@ from .agents.debate import bull_agent, bear_agent, mediator_agent, judge_agent
 # temporal de Gemini, no candidatos malos uno tras otro -- mejor parar pronto y dejar que
 # el proximo ciclo automatico lo intente de nuevo.
 CONSECUTIVE_FAILURES_TO_ABORT = 3
+
+# Sentinel (Fase 4, 2026-09-24): distingue "el caller no pasó security_report, research_token
+# debe consultarlo por su cuenta" de "el caller SÍ lo consultó en lote y vino None (GoPlus
+# falló para este token)" -- en el segundo caso no hay que volver a llamar a GoPlus.
+_UNSET = object()
 
 
 def _now() -> str:
@@ -124,16 +130,24 @@ def build_context(token: dict, market_stats: dict, goplus_report: dict | None, h
     return json.dumps(context, ensure_ascii=False, default=str)
 
 
-def research_token(token: dict, run_id: str | None = None) -> dict:
+def research_token(token: dict, run_id: str | None = None, security_report=_UNSET) -> dict:
     """Ejecuta research+debate+juez para un token. Devuelve el dict listo para guardar
     (category='analyzed', o 'discarded' si se confirma tarde que no cumple MIN_HOLDERS -- ver
-    abajo). El caller (_save_entry) guarda cualquiera de los dos uniformemente."""
+    abajo). El caller (_save_entry) guarda cualquiera de los dos uniformemente.
+
+    `security_report` (Fase 4, 2026-09-24): si el caller ya lo consultó en lote
+    (run_update_cycle's _batch_fetch_security), se lo pasa aquí para no volver a llamar a
+    GoPlus por el mismo contrato -- se acepta explícitamente un valor de None como "ya se
+    intentó, GoPlus no tenía datos" (no dispara un segundo intento). Si el caller no pasa nada
+    (default _UNSET), se consulta aquí mismo como siempre -- research_token() sigue siendo
+    invocable de forma independiente/testeable sin depender de ese paso previo."""
     symbol = token.get("symbol")
     alpha_id = token.get("alphaId")
     is_binance = token.get("source", "binance_alpha") == "binance_alpha"
 
     market_stats = compute_market_stats(alpha_id) if alpha_id else dexscreener.to_market_stats(token)
-    security_report = goplus.get_token_security(token.get("chainName"), token.get("contractAddress"))
+    if security_report is _UNSET:
+        security_report = goplus.get_token_security(token.get("chainName"), token.get("contractAddress"))
     if security_report is None and run_id:
         _append_log(run_id, f"  aviso: sin reporte de GoPlus para {symbol} tras reintentos "
                               "(el Security Analyst queda sin su evidencia Tier 1 principal).")
@@ -240,6 +254,7 @@ def research_token(token: dict, run_id: str | None = None) -> dict:
         "mediator_contradictions_count": len(mediator.get("contradictions", []) or []),
         "listing_age_days_at_discovery": filters.token_age_days(token),
         "pct_change_24h_at_discovery": filters.pct_change_24h(token),
+        **goplus.extract_security_features(security_report),
     }
 
 
@@ -276,6 +291,8 @@ def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None 
         "mediator_contradictions_count": None,
         "listing_age_days_at_discovery": filters.token_age_days(token),
         "pct_change_24h_at_discovery": filters.pct_change_24h(token),
+        "creator_percent": None, "owner_percent": None, "lp_holders_locked_pct": None,
+        "is_honeypot": None, "is_mintable": None,
         "horizon_days": settings.PREDICTION_HORIZON_DAYS,
     }
 
@@ -296,9 +313,10 @@ def _save_entry(run_id: str, data: dict):
                 bull_case, bear_case, mediator_notes,
                 mediator_contradictions_count,
                 listing_age_days_at_discovery, pct_change_24h_at_discovery,
+                creator_percent, owner_percent, lp_holders_locked_pct, is_honeypot, is_mintable,
                 key_evidence, main_risks, system_note, project_explainer, agent_findings, horizon_days,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -315,6 +333,8 @@ def _save_entry(run_id: str, data: dict):
                 data["bull_case"], data["bear_case"], data["mediator_notes"],
                 data["mediator_contradictions_count"],
                 data["listing_age_days_at_discovery"], data["pct_change_24h_at_discovery"],
+                data["creator_percent"], data["owner_percent"], data["lp_holders_locked_pct"],
+                data["is_honeypot"], data["is_mintable"],
                 data["key_evidence"], data["main_risks"], data["system_note"],
                 data["project_explainer"], data["agent_findings"], data["horizon_days"], _now(),
             ),
@@ -361,30 +381,64 @@ def _permanently_unevaluable_symbols() -> set[str]:
     return {r["symbol"] for r in rows}
 
 
-def _ml_features(token: dict) -> dict:
+def _ml_features(token: dict, security_report: dict | None = None) -> dict:
     return {
         "listing_age_days_at_discovery": filters.token_age_days(token),
         "pct_change_24h_at_discovery": filters.pct_change_24h(token),
         "volume_24h": token.get("volume24h"),
         "liquidity": token.get("liquidity"),
         "market_cap": token.get("marketCap"),
+        **goplus.extract_security_features(security_report),
     }
 
 
-def _rank_by_ml(tokens: list[dict]) -> list[dict] | None:
+def _rank_by_ml(tokens: list[dict], security_cache: dict | None = None) -> list[dict] | None:
     """Rankea por score del clasificador de la Fase 1 (ml_scoring.score_candidate). Devuelve
-    None si no hay modelo entrenado todavía (o falta alguna feature en TODOS los tokens) -- el
-    caller debe caer de vuelta a filters.rank_candidates() en ese caso, nunca lanzar un modelo
-    inexistente/mal entrenado a producción."""
+    None si no hay modelo entrenado todavía (o falta alguna feature obligatoria en TODOS los
+    tokens) -- el caller debe caer de vuelta a filters.rank_candidates() en ese caso, nunca
+    lanzar un modelo inexistente/mal entrenado a producción. `security_cache` (Fase 4): mapa
+    contract_address -> reporte de GoPlus ya consultado en lote; si un token no está en el
+    caché (o vino None, GoPlus falló para ese contrato), extract_security_features() ya
+    devuelve valores None que ml_scoring imputa a neutral -- no bloquea el scoring."""
+    security_cache = security_cache or {}
     scored = []
     for t in tokens:
-        score = ml_scoring.score_candidate(_ml_features(t))
+        report = security_cache.get(t.get("contractAddress"))
+        score = ml_scoring.score_candidate(_ml_features(t, report))
         if score is not None:
             scored.append((score, t))
     if not scored:
         return None
     scored.sort(key=lambda x: x[0], reverse=True)
     return [t for _, t in scored]
+
+
+def _batch_fetch_security(tokens: list[dict], run_id: str | None = None) -> dict[str, dict | None]:
+    """Fase 4 (2026-09-24): trae reportes de GoPlus en lote para los sobrevivientes
+    post-filtros-duros (no el universo completo -- serían cientos de llamadas por ciclo). Se
+    hace ANTES de research_token() para que el clasificador ML (Fase 1) tenga estas señales al
+    rankear; el caché resultante se reusa en research_token() para los ~15 finalmente
+    seleccionados, evitando una segunda llamada a GoPlus por el mismo contrato.
+
+    Ritmo conservador (pequeña pausa cada 5 llamadas): sin credenciales autenticadas reales
+    para probar en este entorno, esto es la protección verificable contra una ráfaga de
+    decenas de llamadas seguidas -- el modo autenticado (goplus._get_access_token) se usa
+    automáticamente si GOPLUS_APP_KEY/SECRET están configurados, pero esta pausa no depende de
+    que ese flujo esté funcionando."""
+    cache: dict[str, dict | None] = {}
+    fetched = 0
+    for token in tokens:
+        addr = token.get("contractAddress")
+        if not addr or addr in cache:
+            continue
+        cache[addr] = goplus.get_token_security(token.get("chainName"), addr)
+        fetched += 1
+        if fetched % 5 == 0:
+            time.sleep(1)
+    if run_id:
+        hits = sum(1 for v in cache.values() if v is not None)
+        _append_log(run_id, f"GoPlus en lote (Fase 4): {hits}/{len(cache)} sobrevivientes con reporte de seguridad.")
+    return cache
 
 
 def run_update_cycle(existing_run_id: str | None = None) -> str:
@@ -441,6 +495,11 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         excluded_symbols = unevaluable_symbols | open_analysis_symbols
         eligible_survivors = [t for t, _, _ in survivors if t.get("symbol") not in excluded_symbols]
 
+        # Fase 4 (2026-09-24): GoPlus en lote para los sobrevivientes post-filtros (no el
+        # universo completo) -- alimenta tanto el scoring ML de abajo como, para los ~15
+        # finalmente seleccionados, se reusa en research_token() sin volver a llamar a GoPlus.
+        security_cache = _batch_fetch_security(eligible_survivors, run_id)
+
         # Fase 1 (2026-09-24): selección de candidatos por clasificador ML en vez de la
         # heurística fija, con fallback obligatorio si no hay modelo/muestra todavía. En modo
         # shadow (por defecto) el modelo NO decide nada todavía -- solo se loguea qué habría
@@ -448,7 +507,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         heuristic_ranked = filters.rank_candidates(eligible_survivors, settings.MAX_CANDIDATES_PER_RUN)
         ml_mode = getattr(settings, "ML_SCORING_MODE", "shadow")
         if ml_mode == "active":
-            ml_ranked = _rank_by_ml(eligible_survivors)
+            ml_ranked = _rank_by_ml(eligible_survivors, security_cache)
             if ml_ranked is not None:
                 candidates = ml_ranked[:settings.MAX_CANDIDATES_PER_RUN]
                 _append_log(run_id, f"Selección por clasificador ML (modo activo): {len(candidates)} candidatos.")
@@ -457,7 +516,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 _append_log(run_id, "ML_SCORING_MODE=active pero no hay modelo entrenado todavía -- se usa el ranking heurístico de respaldo.")
         else:
             candidates = heuristic_ranked
-            ml_ranked = _rank_by_ml(eligible_survivors)
+            ml_ranked = _rank_by_ml(eligible_survivors, security_cache)
             if ml_ranked is not None:
                 ml_top_symbols = [t.get("symbol") for t in ml_ranked[:settings.MAX_CANDIDATES_PER_RUN]]
                 heuristic_top_symbols = [t.get("symbol") for t in heuristic_ranked]
@@ -477,7 +536,9 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
             symbol = token.get("symbol")
             _append_log(run_id, f"[{i}/{len(candidates)}] Investigando {symbol}...")
             try:
-                data = research_token(token, run_id=run_id)
+                addr = token.get("contractAddress")
+                cached_report = security_cache.get(addr, _UNSET) if addr else _UNSET
+                data = research_token(token, run_id=run_id, security_report=cached_report)
                 _save_entry(run_id, data)
                 _append_log(run_id, f"[{i}/{len(candidates)}] {symbol}: veredicto = {data.get('verdict')}")
                 consecutive_failures = 0

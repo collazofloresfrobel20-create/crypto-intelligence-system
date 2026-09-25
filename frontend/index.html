@@ -686,6 +686,20 @@ function statusPill(p) {
   return "";
 }
 
+function goplusSignalsLine(p) {
+  // Fase 4: señales estructuradas de GoPlus (antes solo texto crudo para los analistas LLM).
+  // Solo se muestran las que vinieron con dato -- GoPlus tiene cobertura imperfecta y varían
+  // entre EVM y Solana (ver goplus.extract_security_features).
+  const parts = [];
+  if (p.lp_holders_locked_pct != null) parts.push(`liquidez/supply bloqueado ${p.lp_holders_locked_pct}%`);
+  if (p.creator_percent != null) parts.push(`creador controla ${p.creator_percent}%`);
+  if (p.owner_percent != null) parts.push(`dueño controla ${p.owner_percent}%`);
+  if (p.is_mintable != null) parts.push(p.is_mintable ? "es mintable" : "no es mintable");
+  if (p.is_honeypot != null) parts.push(p.is_honeypot ? "posible honeypot" : "no detectado como honeypot");
+  if (!parts.length) return "";
+  return `<p class="muted" style="margin:2px 0 0;">Señales de GoPlus: ${parts.join(" · ")}.</p>`;
+}
+
 function renderPredictions(preds) {
   const el = $("predictions");
   if (!preds.length) { el.innerHTML = '<div class="empty-state">Sin resultados todavía.</div>'; return; }
@@ -711,6 +725,7 @@ function renderPredictions(preds) {
         <div class="score-item"><div class="val">${p.earliness_score ?? "-"}</div><div class="lbl">Earliness</div></div>
       </div>
       ${p.top10_holder_concentration_pct != null ? `<p class="muted" style="margin:2px 0 0;">Los top holders que reporta GoPlus controlan <strong>${p.top10_holder_concentration_pct}%</strong> del supply.</p>` : ""}
+      ${goplusSignalsLine(p)}
       ${projectionBox(p)}
       <div class="radar-row">
         ${radarSvg(p)}

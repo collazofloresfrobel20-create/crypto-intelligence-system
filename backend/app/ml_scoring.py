@@ -40,6 +40,20 @@ FEATURE_KEYS = [
     "market_cap",
 ]
 
+# Fase 4 (2026-09-24): señal de GoPlus (goplus.extract_security_features), OPCIONAL a
+# diferencia de FEATURE_KEYS -- GoPlus tiene cobertura imperfecta (chains no soportadas,
+# llamadas que fallan pese a los reintentos) y exigirla como obligatoria haría que el
+# clasificador cayera al fallback heurístico la mayoría de las veces. Si falta, se imputa a un
+# valor neutral en vez de descartar la fila/candidato.
+OPTIONAL_FEATURE_DEFAULTS = {
+    "creator_percent": 0.0,
+    "owner_percent": 0.0,
+    "lp_holders_locked_pct": 0.0,
+    "is_honeypot": 0,
+    "is_mintable": 0,
+}
+ALL_FEATURE_KEYS = FEATURE_KEYS + list(OPTIONAL_FEATURE_DEFAULTS.keys())
+
 SUCCESS_THRESHOLD = 20.0  # mismo umbral que backtesting.FULL_SUCCESS_THRESHOLD -- no se inventa uno nuevo
 
 
@@ -49,7 +63,8 @@ def _fetch_evaluated_rows() -> list[dict]:
             """
             SELECT created_at, max_return_pct, return_pct, return_at_day3_pct,
                    listing_age_days_at_discovery, pct_change_24h_at_discovery,
-                   volume_24h, liquidity, market_cap
+                   volume_24h, liquidity, market_cap,
+                   creator_percent, owner_percent, lp_holders_locked_pct, is_honeypot, is_mintable
             FROM predictions
             WHERE status = 'evaluated'
             ORDER BY created_at ASC
@@ -59,11 +74,18 @@ def _fetch_evaluated_rows() -> list[dict]:
 
 
 def _row_features(row: dict) -> list[float] | None:
-    values = [row.get(k) for k in FEATURE_KEYS]
-    if any(v is None for v in values):
+    """Las FEATURE_KEYS son obligatorias (si falta cualquiera, esta fila no sirve para
+    entrenar/rankear). Las OPTIONAL_FEATURE_DEFAULTS se imputan si faltan -- así una fila sin
+    datos de GoPlus (o de antes de la Fase 4) sigue siendo usable."""
+    required = [row.get(k) for k in FEATURE_KEYS]
+    if any(v is None for v in required):
         return None
+    optional = [
+        row.get(k) if row.get(k) is not None else OPTIONAL_FEATURE_DEFAULTS[k]
+        for k in OPTIONAL_FEATURE_DEFAULTS
+    ]
     try:
-        return [float(v) for v in values]
+        return [float(v) for v in required + optional]
     except (TypeError, ValueError):
         return None
 
@@ -211,21 +233,33 @@ def benchmark_against_heuristic(eval_rows: list[dict], model) -> dict:
 
 
 def score_candidate(features: dict) -> float | None:
-    """features: dict con las claves de FEATURE_KEYS (mismas unidades que las columnas de la
-    tabla). Devuelve la probabilidad estimada [0,1] de que este candidato termine en éxito, o
-    None si no hay modelo entrenado todavía o si faltan features -- el caller debe caer de
-    vuelta a filters.rank_candidates() en ese caso."""
+    """features: dict con las claves de FEATURE_KEYS (obligatorias) y opcionalmente las de
+    OPTIONAL_FEATURE_DEFAULTS (Fase 4, se imputan si faltan). Devuelve la probabilidad estimada
+    [0,1] de que este candidato termine en éxito, o None si no hay modelo entrenado todavía, si
+    faltan features obligatorias, o si el modelo cargado no coincide en dimensión con las
+    features actuales (ej. un modelo entrenado antes de la Fase 4, con menos columnas) -- en
+    cualquiera de esos casos el caller debe caer de vuelta a filters.rank_candidates()."""
     model = load_model("selector")
     if model is None:
         return None
-    values = [features.get(k) for k in FEATURE_KEYS]
-    if any(v is None for v in values):
+    required = [features.get(k) for k in FEATURE_KEYS]
+    if any(v is None for v in required):
         return None
+    optional = [
+        features.get(k) if features.get(k) is not None else OPTIONAL_FEATURE_DEFAULTS[k]
+        for k in OPTIONAL_FEATURE_DEFAULTS
+    ]
     try:
-        values = [float(v) for v in values]
+        values = [float(v) for v in required + optional]
     except (TypeError, ValueError):
         return None
-    return float(model.predict_proba([values])[0][1])
+    try:
+        return float(model.predict_proba([values])[0][1])
+    except Exception:
+        # Defensivo: un modelo serializado con una dimensión de features distinta (ej. de
+        # antes de la Fase 4) lanzaría aquí en vez de romper el ciclo -- se trata igual que
+        # "no hay modelo utilizable".
+        return None
 
 
 def save_model(model, kind: str, n_samples: int, metrics: dict):

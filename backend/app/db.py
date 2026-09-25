@@ -165,6 +165,14 @@ _MIGRATIONS = [
     # Fase 3 (curva de calibración, 2026-09-24): confidence_score corregido contra el acierto
     # real histórico -- se guarda aparte para poder mostrar crudo y calibrado juntos.
     "ALTER TABLE predictions ADD COLUMN confidence_score_calibrated REAL",
+    # Fase 4 (señal on-chain barata vía GoPlus extendido, 2026-09-24): features estructuradas
+    # (antes solo visibles como texto crudo para los analistas LLM), necesarias como historial
+    # para que el clasificador de la Fase 1 pueda aprender de ellas.
+    "ALTER TABLE predictions ADD COLUMN creator_percent REAL",
+    "ALTER TABLE predictions ADD COLUMN owner_percent REAL",
+    "ALTER TABLE predictions ADD COLUMN lp_holders_locked_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN is_honeypot INTEGER",
+    "ALTER TABLE predictions ADD COLUMN is_mintable INTEGER",
 ]
 
 
