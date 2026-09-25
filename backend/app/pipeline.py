@@ -178,6 +178,24 @@ def research_token(token: dict, run_id: str | None = None) -> dict:
         json.dumps(mediator, ensure_ascii=False),
     )
 
+    # Fase 2 (2026-09-24): decisión de ENSEMBLE_JUDGE_MODE, separada de judge_agent() (que se
+    # queda "puro" -- solo llama LLMs). El desacuerdo entre Gemini y Groq solo importa cuando
+    # Gemini dijo "Strong Opportunity"; en cualquier otro veredicto no hay nada que degradar.
+    final_verdict = verdict.get("verdict")
+    disagreement_on_strong_opp = (
+        final_verdict == "Strong Opportunity" and verdict.get("judge_agreement") == 0
+    )
+    ensemble_mode = getattr(settings, "ENSEMBLE_JUDGE_MODE", "shadow")
+    if disagreement_on_strong_opp:
+        msg = (f"  {symbol}: Gemini dijo 'Strong Opportunity' pero Groq no coincidió "
+               f"(Groq dijo '{verdict.get('secondary_judge_verdict')}')")
+        if ensemble_mode == "active":
+            final_verdict = "Insufficient Evidence"
+            if run_id:
+                _append_log(run_id, msg + " -- se degrada a 'Insufficient Evidence' (modo activo).")
+        elif run_id:
+            _append_log(run_id, f"  [modo shadow] {msg} -- no se cambia el veredicto todavía.")
+
     return {
         "category": "analyzed",
         "symbol": symbol,
@@ -198,7 +216,13 @@ def research_token(token: dict, run_id: str | None = None) -> dict:
         "confidence_score": verdict.get("confidence_score"),
         "earliness_score": verdict.get("earliness_score"),
         "evidence_tier": verdict.get("evidence_tier"),
-        "verdict": verdict.get("verdict"),
+        "verdict": final_verdict,
+        "secondary_judge_verdict": verdict.get("secondary_judge_verdict"),
+        "secondary_judge_opportunity_score": verdict.get("secondary_judge_opportunity_score"),
+        "secondary_judge_risk_score": verdict.get("secondary_judge_risk_score"),
+        "secondary_judge_confidence_score": verdict.get("secondary_judge_confidence_score"),
+        "secondary_judge_earliness_score": verdict.get("secondary_judge_earliness_score"),
+        "judge_agreement": verdict.get("judge_agreement"),
         "bull_case": bull.get("thesis"),
         "bear_case": bear.get("thesis"),
         "mediator_notes": mediator.get("surviving_conclusion"),
@@ -241,6 +265,9 @@ def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None 
         "top10_holder_concentration_pct": None,  # descartados no pasan por GoPlus
         "opportunity_score": None, "risk_score": None, "confidence_score": None,
         "earliness_score": None, "evidence_tier": None, "verdict": "Discarded (hard filter)",
+        "secondary_judge_verdict": None, "secondary_judge_opportunity_score": None,
+        "secondary_judge_risk_score": None, "secondary_judge_confidence_score": None,
+        "secondary_judge_earliness_score": None, "judge_agreement": None,
         "bull_case": None, "bear_case": None, "mediator_notes": None,
         "key_evidence": None, "main_risks": None, "system_note": None, "agent_findings": None,
         "project_explainer": None,
@@ -260,12 +287,16 @@ def _save_entry(run_id: str, data: dict):
                 price_at_prediction, market_cap, liquidity, volume_24h, holders, source,
                 rejection_reasons, rejection_margins, top10_holder_concentration_pct,
                 opportunity_score, risk_score, confidence_score, earliness_score,
-                evidence_tier, verdict, bull_case, bear_case, mediator_notes,
+                evidence_tier, verdict,
+                secondary_judge_verdict, secondary_judge_opportunity_score,
+                secondary_judge_risk_score, secondary_judge_confidence_score,
+                secondary_judge_earliness_score, judge_agreement,
+                bull_case, bear_case, mediator_notes,
                 mediator_contradictions_count,
                 listing_age_days_at_discovery, pct_change_24h_at_discovery,
                 key_evidence, main_risks, system_note, project_explainer, agent_findings, horizon_days,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?,?, ?, ?,?, ?,?,?,?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -275,6 +306,9 @@ def _save_entry(run_id: str, data: dict):
                 data["rejection_reasons"], data["rejection_margins"], data["top10_holder_concentration_pct"],
                 data["opportunity_score"], data["risk_score"], data["confidence_score"],
                 data["earliness_score"], data["evidence_tier"], data["verdict"],
+                data["secondary_judge_verdict"], data["secondary_judge_opportunity_score"],
+                data["secondary_judge_risk_score"], data["secondary_judge_confidence_score"],
+                data["secondary_judge_earliness_score"], data["judge_agreement"],
                 data["bull_case"], data["bear_case"], data["mediator_notes"],
                 data["mediator_contradictions_count"],
                 data["listing_age_days_at_discovery"], data["pct_change_24h_at_discovery"],

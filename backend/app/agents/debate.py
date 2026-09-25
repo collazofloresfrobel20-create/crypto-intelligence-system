@@ -2,9 +2,15 @@ import json
 
 from ..config import settings
 from ..gemini_client import generate_json
+from .. import groq_client
 from .schemas import DEBATE_SCHEMA, MEDIATOR_SCHEMA, JUDGE_SCHEMA, DIAGNOSIS_SCHEMA
 
 _JSON_RULE = "Responde siempre en español. Devuelve solo el JSON pedido, sin texto adicional."
+
+# Fase 2 (2026-09-24): lo mínimo que le pedimos a Groq para poder comparar su veredicto contra
+# el de Gemini -- no le pedimos el resto del JUDGE_SCHEMA (bull_case_summary, key_evidence,
+# etc.), eso ya lo tiene Gemini y no aporta nada tener una segunda versión de la misma prosa.
+_GROQ_JUDGE_KEYS = ["opportunity_score", "risk_score", "confidence_score", "earliness_score", "verdict"]
 
 
 def bull_agent(token_symbol: str, findings_json: str) -> dict:
@@ -55,6 +61,34 @@ def mediator_agent(token_symbol: str, findings_json: str, bull_json: str, bear_j
     )
 
 
+def _groq_second_opinion(token_symbol: str, findings_json: str, bull_json: str, bear_json: str, mediator_json: str) -> dict | None:
+    """Fase 2: segunda opinión independiente vía Groq/Llama, best-effort -- si falla (sin key,
+    error de red, rate limit, JSON inválido tras reintentos), devuelve None y el caller sigue
+    con solo el veredicto de Gemini. Nunca debe bloquear el ciclo por una caída de un tercero."""
+    try:
+        return groq_client.generate_json(
+            model=settings.GROQ_MODEL,
+            system_instruction=(
+                f"Eres un juez independiente evaluando la oportunidad de inversión temprana "
+                f"{token_symbol}. Evalúas de forma independiente 4 métricas 0-100 (opportunity_score, "
+                "risk_score, confidence_score, earliness_score) y emites un verdict de estos 5 "
+                "posibles exactamente: 'Strong Opportunity', 'Watchlist', 'High Risk / Speculative', "
+                "'Reject', 'Insufficient Evidence'. Regla dura: si confidence_score < "
+                f"{settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY}, verdict NO puede ser "
+                "'Strong Opportunity'. Basa tu evaluación solo en la evidencia que se te da, no "
+                "inventes datos. Responde siempre en español."
+            ),
+            prompt=(
+                f"Evidencia original de los analistas (JSON):\n{findings_json}\n\n"
+                f"Bull Case (JSON):\n{bull_json}\n\nBear Case (JSON):\n{bear_json}\n\n"
+                f"Conclusión del Mediador (JSON):\n{mediator_json}"
+            ),
+            required_keys=_GROQ_JUDGE_KEYS,
+        )
+    except Exception:
+        return None
+
+
 def judge_agent(
     token_symbol: str,
     findings_json: str,
@@ -62,7 +96,12 @@ def judge_agent(
     bear_json: str,
     mediator_json: str,
 ) -> dict:
-    return generate_json(
+    """Además del veredicto de Gemini (siempre), intenta una segunda opinión independiente vía
+    Groq (Fase 2, 2026-09-24) -- se adjunta como secondary_judge_* / judge_agreement, pero NO
+    se aplica ninguna regla sobre el veredicto final aquí (eso es una decisión de
+    ENSEMBLE_JUDGE_MODE que vive en pipeline.py, mismo patrón que ML_SCORING_MODE de la Fase 1
+    -- este agente se queda "puro": solo llama LLMs, no decide política de negocio)."""
+    result = generate_json(
         model=settings.GEMINI_MODEL_SMART,
         system_instruction=(
             f"Eres el Juez final para {token_symbol}. NO preguntas '¿me gusta este token?'. "
@@ -94,6 +133,23 @@ def judge_agent(
         ),
         response_schema=JUDGE_SCHEMA,
     )
+
+    groq_result = _groq_second_opinion(token_symbol, findings_json, bull_json, bear_json, mediator_json)
+    if groq_result is None:
+        result["secondary_judge_verdict"] = None
+        result["secondary_judge_opportunity_score"] = None
+        result["secondary_judge_risk_score"] = None
+        result["secondary_judge_confidence_score"] = None
+        result["secondary_judge_earliness_score"] = None
+        result["judge_agreement"] = None
+    else:
+        result["secondary_judge_verdict"] = groq_result.get("verdict")
+        result["secondary_judge_opportunity_score"] = groq_result.get("opportunity_score")
+        result["secondary_judge_risk_score"] = groq_result.get("risk_score")
+        result["secondary_judge_confidence_score"] = groq_result.get("confidence_score")
+        result["secondary_judge_earliness_score"] = groq_result.get("earliness_score")
+        result["judge_agreement"] = int(groq_result.get("verdict") == result.get("verdict"))
+    return result
 
 
 def diagnose_system(summary_json: str) -> dict:

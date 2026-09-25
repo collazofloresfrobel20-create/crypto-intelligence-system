@@ -428,6 +428,30 @@
     <hr class="rule">
 
     <section class="block">
+      <h2>Segunda opinión del Juez (Groq)</h2>
+      <p class="desc">
+        Además de Gemini, cada veredicto se contrasta con una segunda opinión independiente
+        (Groq/Llama). En modo <strong>shadow</strong> (por defecto) se guarda si coinciden o
+        no, pero el veredicto final sigue siendo el de Gemini sin tocar -- primero hace falta
+        acumular suficiente historial para saber si el desacuerdo de verdad predice peor
+        resultado real. En modo <strong>active</strong>, si Gemini dice "Strong Opportunity" y
+        Groq no coincide, el veredicto final baja a "Insufficient Evidence". Si Groq no está
+        disponible (sin key, caído, etc.) el ciclo sigue normal con solo el veredicto de
+        Gemini -- nunca se bloquea por un tercero.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Modo
+          <select id="cfgEnsembleMode">
+            <option value="shadow">Shadow (observar, no decide)</option>
+            <option value="active">Activo (puede degradar el veredicto)</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
       <h2>Sistema</h2>
       <div class="table-wrap">
         <table><tbody id="modelInfo"></tbody></table>
@@ -678,6 +702,7 @@ function renderPredictions(preds) {
         </div>
       </div>
       ${p.project_explainer ? `<p class="project-explainer">${p.project_explainer}</p>` : ""}
+      ${p.secondary_judge_verdict ? `<p class="muted" style="margin:2px 0 0;">Segunda opinión (Groq): <strong>${p.secondary_judge_verdict}</strong> ${p.judge_agreement ? "(coincide con Gemini)" : "(no coincide con Gemini)"}</p>` : ""}
       <div class="scores">
         <div class="score-item"><div class="val">${p.opportunity_score ?? "-"}</div><div class="lbl">Opportunity</div></div>
         <div class="score-item"><div class="val">${p.risk_score ?? "-"}</div><div class="lbl">Risk</div></div>
@@ -1177,6 +1202,7 @@ async function loadConfig() {
   $("cfgMaxCandidates").value = cfg.MAX_CANDIDATES_PER_RUN;
   $("cfgMinConfidence").value = cfg.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY;
   $("cfgMlMode").value = cfg.ML_SCORING_MODE || "shadow";
+  $("cfgEnsembleMode").value = cfg.ENSEMBLE_JUDGE_MODE || "shadow";
   $("modelInfo").innerHTML = `
     <tr><td>Modelo analistas</td><td>${cfg.GEMINI_MODEL_FAST}</td></tr>
     <tr><td>Modelo debate/juez</td><td>${cfg.GEMINI_MODEL_SMART}</td></tr>
@@ -1238,6 +1264,7 @@ $("btnSaveConfig").onclick = async () => {
     MAX_CANDIDATES_PER_RUN: parseInt($("cfgMaxCandidates").value),
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: parseInt($("cfgMinConfidence").value),
     ML_SCORING_MODE: $("cfgMlMode").value,
+    ENSEMBLE_JUDGE_MODE: $("cfgEnsembleMode").value,
   };
   await api("/api/config", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
   $("configStatus").textContent = "Guardado (aplica a la sesión actual del backend).";

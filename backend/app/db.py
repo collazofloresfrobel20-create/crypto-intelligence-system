@@ -154,6 +154,14 @@ _MIGRATIONS = [
     # persistían, necesarias para poder entrenar después contra el resultado real.
     "ALTER TABLE predictions ADD COLUMN listing_age_days_at_discovery REAL",
     "ALTER TABLE predictions ADD COLUMN pct_change_24h_at_discovery REAL",
+    # Fase 2 (ensemble del Juez vía Groq, 2026-09-24): segunda opinión independiente, guardada
+    # aparte del veredicto/scores de Gemini para poder auditar acuerdo/desacuerdo.
+    "ALTER TABLE predictions ADD COLUMN secondary_judge_verdict TEXT",
+    "ALTER TABLE predictions ADD COLUMN secondary_judge_opportunity_score INTEGER",
+    "ALTER TABLE predictions ADD COLUMN secondary_judge_risk_score INTEGER",
+    "ALTER TABLE predictions ADD COLUMN secondary_judge_confidence_score INTEGER",
+    "ALTER TABLE predictions ADD COLUMN secondary_judge_earliness_score INTEGER",
+    "ALTER TABLE predictions ADD COLUMN judge_agreement INTEGER",
 ]
 
 

@@ -228,6 +228,8 @@ def get_config():
         "MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY": settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY,
         "ML_SCORING_MODE": settings.ML_SCORING_MODE,
         "MIN_SAMPLES_FOR_ML": settings.MIN_SAMPLES_FOR_ML,
+        "ENSEMBLE_JUDGE_MODE": settings.ENSEMBLE_JUDGE_MODE,
+        "groq_api_key_configured": bool(settings.GROQ_API_KEY),
         "GEMINI_MODEL_FAST": settings.GEMINI_MODEL_FAST,
         "GEMINI_MODEL_SMART": settings.GEMINI_MODEL_SMART,
         "GEMINI_ENABLE_SEARCH_GROUNDING": settings.GEMINI_ENABLE_SEARCH_GROUNDING,
@@ -249,6 +251,7 @@ class ConfigUpdateBody(BaseModel):
     MAX_CANDIDATES_PER_RUN: int | None = None
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: int | None = None
     ML_SCORING_MODE: str | None = None
+    ENSEMBLE_JUDGE_MODE: str | None = None
 
 
 @app.get("/api/ml-models/{kind}")

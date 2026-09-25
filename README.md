@@ -137,6 +137,33 @@ historial propio de ciclos anteriores del mismo símbolo y calcula tendencia rea
 o cayendo?) en vez de depender de una foto fija o de una API externa de pago. Esto mejora solo con
 el tiempo, automáticamente, ahora que la actualización corre sola (punto 2).
 
+### 8. Segunda opinión del Juez vía Groq (Fase 2, 2026-09-24, modo shadow por defecto)
+Cada veredicto de Gemini se contrasta ahora con una segunda opinión independiente de un modelo
+distinto: Groq (Llama), que tiene free tier permanente sin facturación. `app/groq_client.py`
+implementa el mismo contrato que `gemini_client.py` pero adaptado a la API de Groq (modo JSON
+genérico en vez del `response_schema` nativo de Gemini, con reintento si el JSON no trae las
+claves esperadas).
+
+**Comportamiento actual (`ENSEMBLE_JUDGE_MODE=shadow`, el que arranca activo):** se llama a Groq,
+se guardan su veredicto y sus 4 scores (`secondary_judge_*`), y si coincide o no con Gemini
+(`judge_agreement`) — pero el veredicto final que se muestra en el dashboard y el que dispara
+Telegram **sigue siendo exactamente el de Gemini, sin tocar**. La razón: un desacuerdo entre dos
+modelos no prueba por sí solo que la evidencia sea insuficiente (podría ser que Groq tuvo menos
+contexto, o que el caso es genuinamente ambiguo) — antes de actuar sobre eso hace falta acumular
+historial y cruzarlo contra el resultado real (`max_return_pct`) para ver si el desacuerdo de
+verdad predice peor precisión.
+
+**Modo `active`** (activable desde Configuración, decisión humana, nunca automática): si Gemini
+dice "Strong Opportunity" y Groq no coincide, el veredicto final que se persiste baja a
+"Insufficient Evidence" — los 4 scores numéricos de Gemini no se tocan, solo el veredicto.
+Cualquier otro veredicto de Gemini no se ve afectado por el desacuerdo.
+
+**Si Groq no está disponible** (sin `GROQ_API_KEY`, caído, rate limit, JSON inválido tras
+reintentos): el ciclo sigue normal con solo el veredicto de Gemini, `secondary_judge_verdict` y
+`judge_agreement` quedan en `NULL` para esa predicción — nunca se bloquea el research por la
+caída de un tercero. Necesitas crear el secret `GROQ_API_KEY` en GitHub Actions manualmente
+(gratis en [console.groq.com](https://console.groq.com)) para que esto funcione en producción.
+
 ## Acceso privado
 El dashboard entero (frontend + API) queda detrás de un login simple de usuario/contraseña — sin
 sesión válida, cualquier ruta redirige a `/login` (o devuelve 401 en API). Es un solo usuario fijo,

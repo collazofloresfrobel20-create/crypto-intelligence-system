@@ -52,4 +52,5 @@ jobs:
           TELEGRAM_NOTIFY_VERDICTS: "Strong Opportunity"
           GOPLUS_APP_KEY: ${{ secrets.GOPLUS_APP_KEY }}
           GOPLUS_APP_SECRET: ${{ secrets.GOPLUS_APP_SECRET }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python scripts/run_once.py

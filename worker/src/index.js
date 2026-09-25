@@ -14,8 +14,9 @@ const ADJUSTABLE_PARAMS = {
   MAX_LISTING_AGE_DAYS: "int",
   MAX_CANDIDATES_PER_RUN: "int",
   MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: "int",
-  // Fase 1 (2026-09-24): decisión humana, nunca tocada por el flujo de auto-corrección.
+  // Fase 1/2 (2026-09-24): decisión humana, nunca tocada por el flujo de auto-corrección.
   ML_SCORING_MODE: "enum:shadow,active",
+  ENSEMBLE_JUDGE_MODE: "enum:shadow,active",
 };
 
 async function saveDynamicConfig(db, updates) {
@@ -281,6 +282,7 @@ async function handleApi(path, request, env) {
       ...cfg,
       ML_SCORING_MODE: overrides.ML_SCORING_MODE || "shadow",
       MIN_SAMPLES_FOR_ML: 30,
+      ENSEMBLE_JUDGE_MODE: overrides.ENSEMBLE_JUDGE_MODE || "shadow",
       PREDICTION_HORIZON_DAYS: 7,
       GEMINI_MODEL_FAST: "gemini-3.5-flash-lite",
       GEMINI_MODEL_SMART: "gemini-3.5-flash",

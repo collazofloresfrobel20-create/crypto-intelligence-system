@@ -81,6 +81,20 @@ class Settings:
     # de la Fase 1.5 -- nunca automática.
     ML_SCORING_MODE = os.getenv("ML_SCORING_MODE", "shadow")
 
+    # --- Fase 2 (2026-09-24): segunda opinión del Juez vía Groq (free tier permanente, sin
+    # facturación requerida -- a diferencia del grounding de Gemini que dejó de ser gratis) ---
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    # Confirmar el nombre exacto contra https://console.groq.com/docs/models al desplegar --
+    # los modelos gratuitos de Groq rotan con cierta frecuencia, más que los de Gemini.
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    # "shadow" (por defecto): se llama a Groq y se guarda su veredicto + si coincide con
+    # Gemini, pero el veredicto final que se usa (dashboard, Telegram) sigue siendo el de
+    # Gemini sin tocar -- primero se mide si el desacuerdo predice peor resultado real, no se
+    # asume. "active": si Gemini dice "Strong Opportunity" y Groq no coincide, el veredicto
+    # final baja a "Insufficient Evidence". Decisión humana desde el dashboard, nunca
+    # automática ni tocada por el auto-corrector.
+    ENSEMBLE_JUDGE_MODE = os.getenv("ENSEMBLE_JUDGE_MODE", "shadow")
+
     # --- GoPlus (sin key requerida para uso básico) ---
     GOPLUS_APP_KEY = os.getenv("GOPLUS_APP_KEY", "")
     GOPLUS_APP_SECRET = os.getenv("GOPLUS_APP_SECRET", "")

@@ -50,6 +50,10 @@ Dámelos (o ponlos tú directamente en `backend/.env` como `TURSO_DATABASE_URL` 
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
    - `GOPLUS_APP_KEY` / `GOPLUS_APP_SECRET` (opcionales, déjalos vacíos si no los usas)
+   - `GROQ_API_KEY` — gratis en [console.groq.com](https://console.groq.com), usado como
+     segunda opinión independiente del Juez (Fase 2, ver README §8). Sin este secret el ciclo
+     sigue funcionando normal, solo con el veredicto de Gemini (nunca se bloquea por su
+     ausencia), pero no vas a tener con qué comparar hasta que lo agregues.
 4. **(TÚ)** Crea un **Personal Access Token** (classic, con scopes `repo` **y `workflow`**) en
    https://github.com/settings/tokens — lo necesita el Worker para poder disparar el workflow
    desde el botón "Actualizar sistema" (y a mí me hace falta `workflow` para poder subir

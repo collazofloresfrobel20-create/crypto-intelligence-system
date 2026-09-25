@@ -31,6 +31,8 @@ _ADJUSTABLE_PARAMS = {
     "MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY": int,
     # Fase 1 (2026-09-24): decisión humana, nunca tocada por diagnosis.py (auto-corrección).
     "ML_SCORING_MODE": _enum_caster({"shadow", "active"}),
+    # Fase 2 (2026-09-24): idem -- decisión humana, nunca tocada por diagnosis.py.
+    "ENSEMBLE_JUDGE_MODE": _enum_caster({"shadow", "active"}),
 }
 
 
