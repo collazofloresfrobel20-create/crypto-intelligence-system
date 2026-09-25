@@ -208,6 +208,11 @@ def api_apply_diagnosis(diagnosis_id: int, body: ApplyAdjustmentsBody):
     return diagnosis.apply_adjustments(diagnosis_id, body.accepted_params)
 
 
+@app.post("/api/diagnoses/{diagnosis_id}/rollback")
+def api_rollback_diagnosis(diagnosis_id: int):
+    return diagnosis.rollback_adjustment(diagnosis_id)
+
+
 # ---------- Config ----------
 
 @app.get("/api/config")

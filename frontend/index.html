@@ -677,6 +677,7 @@ function renderPredictions(preds) {
           <div class="text-block">${p.bear_case || "-"}</div>
         </div>
       </div>
+      ${p.mediator_contradictions_count ? `<p class="muted" style="margin:6px 0 0;">El Mediador encontró <strong>${p.mediator_contradictions_count}</strong> ${p.mediator_contradictions_count === 1 ? "contradicción" : "contradicciones"} entre Bull y Bear.</p>` : ""}
       ${evidence.length || risks.length ? `<div class="debate-grid">
         <div>${evidence.length ? `<div class="section-title">Evidencia clave</div><ul class="compact">${evidence.map(e=>`<li>${e}</li>`).join("")}</ul>` : ""}</div>
         <div>${risks.length ? `<div class="section-title">Riesgos principales</div><ul class="compact">${risks.map(r=>`<li>${r}</li>`).join("")}</ul>` : ""}</div>
@@ -694,6 +695,14 @@ function renderPredictions(preds) {
 
 const DISCARDED_STATUS_LABEL = { pending: "Pendiente", evaluated: "Evaluado", unevaluable: "Sin datos" };
 
+function wasNearMiss(margins) {
+  // Fase 0a: "casi pasó los filtros" -- todos los filtros que falló los falló por menos del
+  // 20% (ratio_of_threshold >= 0.8). Texto plano, sin color nuevo (el color se reserva para
+  // retornos con signo).
+  if (!Array.isArray(margins) || !margins.length) return false;
+  return margins.every(m => typeof m.ratio_of_threshold === "number" && m.ratio_of_threshold >= 0.8);
+}
+
 function renderDiscarded(rows, total) {
   const el = $("discardedTable");
   if (!rows.length) { el.innerHTML = '<div class="empty-state">Sin datos todavía.</div>'; return; }
@@ -705,10 +714,11 @@ function renderDiscarded(rows, total) {
     <tbody>
       ${rows.map(r => {
         const reasons = Array.isArray(r.rejection_reasons) ? r.rejection_reasons : [];
+        const margins = Array.isArray(r.rejection_margins) ? r.rejection_margins : [];
         const missed = r.status === 'evaluated' && (r.max_return_pct ?? 0) >= 20;
         return `<tr>
           <td><strong>${r.symbol}</strong></td>
-          <td>${reasons.map(x => `<span class="pill-inline">${x}</span>`).join("")}</td>
+          <td>${reasons.map(x => `<span class="pill-inline">${x}</span>`).join("")}${wasNearMiss(margins) ? '<span class="pill-inline">Casi pasó los filtros</span>' : ""}</td>
           <td>${DISCARDED_STATUS_LABEL[r.status] || r.status}</td>
           <td>${r.status === 'evaluated' ? r.max_return_pct + '%' : '-'}</td>
           <td>${r.status === 'evaluated' ? (missed ? 'Sí' : 'No') : '-'}</td>
@@ -1095,6 +1105,11 @@ async function loadDiagnosis() {
         <div class="section-title">Ajustes propuestos</div>
         <ul class="compact">${adj.map(a => `<li><strong>${a.parameter}</strong>: ${a.current_value} &rarr; ${a.proposed_value}. ${a.reason}</li>`).join("")}</ul>
         ${diag.status === 'proposed' ? `<div class="row" style="margin-top:12px;"><button class="btn small" id="btnApplyDiag">Aplicar ajustes propuestos</button></div>` : ''}
+        ${diag.status === 'applied' ? `
+          <div class="row" style="margin-top:12px;"><button class="btn small" id="btnRollbackDiag">Deshacer</button></div>
+          <p class="muted" style="margin-top:6px;">Deshacer restaura el valor que el sistema tenía registrado al momento de este diagnóstico -- si otro ajuste tocó el mismo parámetro después, podría no ser el valor más reciente.</p>
+        ` : ''}
+        ${diag.status === 'rolled_back' ? `<p class="muted" style="margin-top:8px;">Este ajuste fue revertido.</p>` : ''}
       ` : ""}
     `;
     const applyBtn = document.getElementById("btnApplyDiag");
@@ -1103,6 +1118,18 @@ async function loadDiagnosis() {
         await api(`/api/diagnoses/${diag.id}/apply`, {
           method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({})
         });
+        loadDiagnosis();
+        loadConfig();
+      };
+    }
+    const rollbackBtn = document.getElementById("btnRollbackDiag");
+    if (rollbackBtn) {
+      rollbackBtn.onclick = async () => {
+        const r = await api(`/api/diagnoses/${diag.id}/rollback`, { method: "POST" });
+        if (r.failed && r.failed.length) {
+          alert("Se revirtieron " + r.rolled_back.length + " parámetro(s). No se pudieron revertir: "
+            + r.failed.map(f => `${f.parameter} (${f.reason})`).join(", "));
+        }
         loadDiagnosis();
         loadConfig();
       };

@@ -208,6 +208,56 @@ async function handleApi(path, request, env) {
     return json({ applied });
   }
 
+  const rollbackMatch = path.match(/^\/api\/diagnoses\/(\d+)\/rollback$/);
+  if (rollbackMatch && request.method === "POST") {
+    // Fase 0c (2026-09-24): revierte al valor que el diagnóstico tenía registrado como
+    // 'current_value' al momento de proponerse -- no necesariamente el más reciente si otro
+    // ajuste tocó el mismo parámetro después. current_value es texto libre del LLM (ej.
+    // "$50,000"), así que nunca se falla en silencio: lo que no se pudo revertir se reporta.
+    const diagId = rollbackMatch[1];
+    const diag = await db.one("SELECT * FROM diagnoses WHERE id = ?", [diagId]);
+    if (!diag) return json({ rolled_back: [], failed: [], message: "diagnóstico no encontrado" }, 404);
+    if (diag.status !== "applied") {
+      return json({ rolled_back: [], failed: [], message: "este diagnóstico no está en estado 'applied', no hay nada que deshacer" });
+    }
+    const appliedAdjustments = diag.applied_adjustments ? JSON.parse(diag.applied_adjustments) : [];
+    const proposed = diag.proposed_adjustments ? JSON.parse(diag.proposed_adjustments) : [];
+    const proposedByParam = {};
+    for (const p of proposed) proposedByParam[p.parameter] = p.current_value;
+
+    const updates = {};
+    const failed = [];
+    for (const item of appliedAdjustments) {
+      const param = item.parameter;
+      if (!(param in ADJUSTABLE_PARAMS)) {
+        failed.push({ parameter: param, reason: "parámetro ya no es ajustable" });
+        continue;
+      }
+      const rawOriginal = proposedByParam[param];
+      if (rawOriginal === undefined || rawOriginal === null) {
+        failed.push({ parameter: param, reason: "no se encontró el valor original en este diagnóstico" });
+        continue;
+      }
+      const cleaned = String(rawOriginal).replace(/[^\d.\-]/g, "");
+      if (!cleaned || cleaned === "-" || cleaned === "." || cleaned === "-.") {
+        failed.push({ parameter: param, reason: `no se pudo interpretar '${rawOriginal}' como número` });
+        continue;
+      }
+      updates[param] = cleaned;
+    }
+
+    const appliedValues = Object.keys(updates).length ? await saveDynamicConfig(db, updates) : {};
+    const rolledBack = Object.entries(appliedValues).map(([parameter, restored_value]) => ({ parameter, restored_value }));
+    for (const param of Object.keys(updates)) {
+      if (!(param in appliedValues)) failed.push({ parameter: param, reason: "no se pudo aplicar el valor restaurado" });
+    }
+
+    if (rolledBack.length) {
+      await db.run("UPDATE diagnoses SET status = 'rolled_back' WHERE id = ?", [diagId]);
+    }
+    return json({ rolled_back: rolledBack, failed });
+  }
+
   // ---- Configuración ----
   if (path === "/api/config" && request.method === "GET") {
     const overrides = await getConfigOverrides(db);

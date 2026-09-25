@@ -211,12 +211,16 @@ def research_token(token: dict, run_id: str | None = None) -> dict:
             ensure_ascii=False,
         ),
         "horizon_days": settings.PREDICTION_HORIZON_DAYS,
+        "rejection_margins": None,  # solo aplica a descartados
+        "mediator_contradictions_count": len(mediator.get("contradictions", []) or []),
     }
 
 
-def discarded_entry(token: dict, reasons: list[str]) -> dict:
+def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None = None) -> dict:
     """Registro ligero (sin research LLM) para un token rechazado por hard filters. Se
-    trackea para poder comparar después si el rechazo estuvo justificado."""
+    trackea para poder comparar después si el rechazo estuvo justificado. `margins` (Fase 0,
+    2026-09-24) guarda, por cada filtro que falló, qué tan cerca estuvo de pasar -- permite
+    distinguir en el dashboard "falló por mucho" de "casi pasó los filtros"."""
     return {
         "category": "discarded",
         "symbol": token.get("symbol"),
@@ -231,12 +235,14 @@ def discarded_entry(token: dict, reasons: list[str]) -> dict:
         "holders": token.get("holders"),
         "source": token.get("source", "binance_alpha"),
         "rejection_reasons": json.dumps(reasons, ensure_ascii=False),
+        "rejection_margins": json.dumps(margins, ensure_ascii=False) if margins else None,
         "top10_holder_concentration_pct": None,  # descartados no pasan por GoPlus
         "opportunity_score": None, "risk_score": None, "confidence_score": None,
         "earliness_score": None, "evidence_tier": None, "verdict": "Discarded (hard filter)",
         "bull_case": None, "bear_case": None, "mediator_notes": None,
         "key_evidence": None, "main_risks": None, "system_note": None, "agent_findings": None,
         "project_explainer": None,
+        "mediator_contradictions_count": None,
         "horizon_days": settings.PREDICTION_HORIZON_DAYS,
     }
 
@@ -248,22 +254,24 @@ def _save_entry(run_id: str, data: dict):
             INSERT INTO predictions (
                 run_id, category, symbol, name, alpha_id, chain_name, contract_address,
                 price_at_prediction, market_cap, liquidity, volume_24h, holders, source,
-                rejection_reasons, top10_holder_concentration_pct,
+                rejection_reasons, rejection_margins, top10_holder_concentration_pct,
                 opportunity_score, risk_score, confidence_score, earliness_score,
                 evidence_tier, verdict, bull_case, bear_case, mediator_notes,
+                mediator_contradictions_count,
                 key_evidence, main_risks, system_note, project_explainer, agent_findings, horizon_days,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?,?, ?, ?,?,?,?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
                 data["chain_name"], data["contract_address"], data["price_at_prediction"],
                 data["market_cap"], data["liquidity"], data["volume_24h"], data["holders"],
                 data["source"],
-                data["rejection_reasons"], data["top10_holder_concentration_pct"],
+                data["rejection_reasons"], data["rejection_margins"], data["top10_holder_concentration_pct"],
                 data["opportunity_score"], data["risk_score"], data["confidence_score"],
                 data["earliness_score"], data["evidence_tier"], data["verdict"],
                 data["bull_case"], data["bear_case"], data["mediator_notes"],
+                data["mediator_contradictions_count"],
                 data["key_evidence"], data["main_risks"], data["system_note"],
                 data["project_explainer"], data["agent_findings"], data["horizon_days"], _now(),
             ),
@@ -345,28 +353,28 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
 
         survivors, discarded = [], []
         for token in universe:
-            ok, reasons = filters.passes_hard_filters(token)
-            (survivors if ok else discarded).append((token, reasons))
+            ok, reasons, margins = filters.passes_hard_filters_with_margins(token)
+            (survivors if ok else discarded).append((token, reasons, margins))
 
         _append_log(run_id, f"Hard filters: {len(survivors)} sobreviven, {len(discarded)} descartados.")
 
         new_discarded = 0
-        for token, reasons in discarded:
+        for token, reasons, margins in discarded:
             if token.get("symbol") in already_tracked:
                 continue
             try:
-                _save_entry(run_id, discarded_entry(token, reasons))
+                _save_entry(run_id, discarded_entry(token, reasons, margins))
                 new_discarded += 1
             except Exception:
                 pass
         _append_log(run_id, f"Registrados {new_discarded} descartados nuevos para seguimiento (de {len(discarded)}).")
 
         excluded_symbols = unevaluable_symbols | open_analysis_symbols
-        eligible_survivors = [t for t, _ in survivors if t.get("symbol") not in excluded_symbols]
+        eligible_survivors = [t for t, _, _ in survivors if t.get("symbol") not in excluded_symbols]
         candidates = filters.rank_candidates(eligible_survivors, settings.MAX_CANDIDATES_PER_RUN)
         candidates = [t for t in candidates if t.get("symbol") not in already_tracked]
-        skipped_unevaluable = len([t for t, _ in survivors if t.get("symbol") in unevaluable_symbols])
-        skipped_open = len([t for t, _ in survivors if t.get("symbol") in open_analysis_symbols])
+        skipped_unevaluable = len([t for t, _, _ in survivors if t.get("symbol") in unevaluable_symbols])
+        skipped_open = len([t for t, _, _ in survivors if t.get("symbol") in open_analysis_symbols])
         _append_log(run_id, f"Candidatos nuevos para research profundo: {len(candidates)}."
                     + (f" ({skipped_unevaluable} excluidos por no tener precio disponible en ciclos anteriores.)" if skipped_unevaluable else "")
                     + (f" ({skipped_open} excluidos por ya tener un análisis pendiente de resolver, para diversificar el research en vez de repetir siempre los mismos símbolos.)" if skipped_open else ""))

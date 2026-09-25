@@ -136,6 +136,9 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN source TEXT DEFAULT 'binance_alpha'",
     "ALTER TABLE predictions ADD COLUMN running_max_price REAL",
     "ALTER TABLE predictions ADD COLUMN running_min_price REAL",
+    # Fase 0 (Grupo 3, 2026-09-24):
+    "ALTER TABLE predictions ADD COLUMN rejection_margins TEXT",
+    "ALTER TABLE predictions ADD COLUMN mediator_contradictions_count INTEGER",
 ]
 
 
@@ -212,7 +215,8 @@ def init_db():
 def row_to_dict(row) -> dict:
     d = dict(row)
     for key in ("key_evidence", "main_risks", "agent_findings", "rejection_reasons",
-                "patterns_found", "proposed_adjustments", "applied_adjustments"):
+                "patterns_found", "proposed_adjustments", "applied_adjustments",
+                "rejection_margins"):
         if d.get(key):
             try:
                 d[key] = json.loads(d[key])

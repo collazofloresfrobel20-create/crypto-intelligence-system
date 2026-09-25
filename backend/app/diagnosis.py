@@ -1,6 +1,7 @@
 """Auto-corrección continua (spec sección 9.3), desacoplada de un piloto de 7 días único:
 corre automáticamente al final de cada ciclo de actualización si hubo evaluaciones nuevas."""
 import json
+import re
 from datetime import datetime, timezone
 
 from .config import settings
@@ -134,3 +135,58 @@ def apply_adjustments(diagnosis_id: int, accepted_params: list[str] | None = Non
         )
 
     return {"applied": applied}
+
+
+def rollback_adjustment(diagnosis_id: int) -> dict:
+    """
+    Revierte los ajustes que un diagnóstico aplicó, devolviendo cada parámetro al valor que
+    el propio diagnóstico tenía registrado como 'current_value' al momento de proponerse (Fase
+    0c, 2026-09-24). Advertencia real: ese es el valor que el sistema tenía EN ESE MOMENTO --
+    si otro ajuste tocó el mismo parámetro después, el rollback no lo sabe y podría no
+    restaurar el valor más reciente. `current_value` es texto libre generado por el LLM (puede
+    venir como "$50,000" en vez de "50000"), así que nunca se falla en silencio: cada parámetro
+    que no se pudo revertir se reporta explícitamente en `failed`, en vez de reusar el
+    skip-silencioso de `save_dynamic_config` -- el usuario pulsó un botón esperando un
+    resultado concreto.
+    """
+    diag = get_diagnosis(diagnosis_id)
+    if not diag:
+        return {"rolled_back": [], "failed": [], "message": "Diagnóstico no encontrado."}
+    if diag.get("status") != "applied":
+        return {"rolled_back": [], "failed": [],
+                "message": "Este diagnóstico no está en estado 'applied', no hay nada que deshacer."}
+
+    applied = diag.get("applied_adjustments") or []
+    proposed_by_param = {
+        p.get("parameter"): p.get("current_value")
+        for p in (diag.get("proposed_adjustments") or [])
+    }
+
+    updates = {}
+    failed = []
+    for item in applied:
+        param = item.get("parameter")
+        if param not in _ADJUSTABLE_PARAMS:
+            failed.append({"parameter": param, "reason": "parámetro ya no es ajustable"})
+            continue
+        raw_original = proposed_by_param.get(param)
+        if raw_original is None:
+            failed.append({"parameter": param, "reason": "no se encontró el valor original en este diagnóstico"})
+            continue
+        cleaned = re.sub(r"[^\d.\-]", "", str(raw_original))
+        if not cleaned or cleaned in ("-", ".", "-."):
+            failed.append({"parameter": param, "reason": f"no se pudo interpretar '{raw_original}' como número"})
+            continue
+        updates[param] = cleaned
+
+    applied_values = dynamic_config.save_dynamic_config(updates) if updates else {}
+    rolled_back = [{"parameter": k, "restored_value": v} for k, v in applied_values.items()]
+    for param in updates:
+        if param not in applied_values:
+            failed.append({"parameter": param, "reason": "no se pudo aplicar el valor restaurado"})
+
+    if rolled_back:
+        with get_conn() as conn:
+            conn.execute("UPDATE diagnoses SET status = 'rolled_back' WHERE id = ?", (diagnosis_id,))
+
+    return {"rolled_back": rolled_back, "failed": failed}
