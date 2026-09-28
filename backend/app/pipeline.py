@@ -3,7 +3,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring, market_regime
+from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring, market_regime, price_models
 from .config import settings
 from .db import get_conn
 from .market_stats import compute_market_stats, price_features
@@ -298,6 +298,7 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
         "data_quality": json.dumps(data_quality, ensure_ascii=False),
         "data_completeness": data_quality["completeness"],
         **price_features(market_stats),
+        **price_models.score_columns(token, price_features(market_stats)),
         **goplus.extract_security_features(security_report),
     }
 
@@ -338,6 +339,7 @@ def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None 
         "creator_percent": None, "owner_percent": None, "lp_holders_locked_pct": None,
         "is_honeypot": None, "is_mintable": None,
         **price_features(stats),
+        **price_models.score_columns(token, price_features(stats)),
         "horizon_days": settings.PREDICTION_HORIZON_DAYS,
     }
 
@@ -366,8 +368,9 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data_quality, data_completeness, market_regime,
                 vol_hourly_pct, momentum_7d_pct, max_drawdown_7d_pct, dist_from_high_pct,
                 dist_from_low_pct, range_pos_7d, vol_trend_24h_vs_7d,
+                pm_touch20, pm_sustained10, pm_drop20,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -392,6 +395,7 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data.get("vol_hourly_pct"), data.get("momentum_7d_pct"), data.get("max_drawdown_7d_pct"),
                 data.get("dist_from_high_pct"), data.get("dist_from_low_pct"), data.get("range_pos_7d"),
                 data.get("vol_trend_24h_vs_7d"),
+                data.get("pm_touch20"), data.get("pm_sustained10"), data.get("pm_drop20"),
                 _now(),
             ),
         )
@@ -538,6 +542,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
     Corre sincrónico (pensado para lanzarse desde un background task).
     """
     run_id = existing_run_id or create_run("update")
+    price_models.reset_cache()
     try:
         _append_log(run_id, "Descargando universo de tokens de Binance Alpha...")
         universe = binance_alpha.get_alpha_token_list()
@@ -611,8 +616,17 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         # shadow (por defecto) el modelo NO decide nada todavía -- solo se loguea qué habría
         # elegido, para comparar contra la selección real antes de activarlo de verdad.
         heuristic_ranked = filters.rank_candidates(eligible_survivors, settings.MAX_CANDIDATES_PER_RUN)
+        # Plan v2, B2: modelos de precio. Se calculan SIEMPRE (los pm_* se guardan por fila);
+        # solo deciden la seleccion si PRICE_MODEL_MODE == 'active' (decision humana).
+        features_by_alpha = {t.get("alphaId"): price_features(stats_cache.get(t.get("alphaId")))
+                             for t in eligible_survivors if t.get("alphaId")}
+        price_ranked = price_models.rank_by_price_model(eligible_survivors, features_by_alpha)
+        price_mode = getattr(settings, "PRICE_MODEL_MODE", "shadow")
         ml_mode = getattr(settings, "ML_SCORING_MODE", "shadow")
-        if ml_mode == "active":
+        if price_mode == "active" and price_ranked is not None:
+            candidates = price_ranked[:settings.MAX_CANDIDATES_PER_RUN]
+            _append_log(run_id, f"Selección por modelos de precio (modo activo): {len(candidates)} candidatos.")
+        elif ml_mode == "active":
             ml_ranked = _rank_by_ml(eligible_survivors, security_cache)
             if ml_ranked is not None:
                 candidates = ml_ranked[:settings.MAX_CANDIDATES_PER_RUN]
@@ -629,6 +643,15 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 overlap = len(set(ml_top_symbols) & set(heuristic_top_symbols))
                 _append_log(run_id, f"[modo shadow] El clasificador ML habría elegido: {ml_top_symbols} "
                             f"({overlap}/{len(heuristic_top_symbols)} coinciden con la selección heurística real que se usó).")
+
+        if price_mode != "active":
+            if price_ranked is not None:
+                pr_top = [t.get("symbol") for t in price_ranked[:settings.MAX_CANDIDATES_PER_RUN]]
+                cur = {t.get("symbol") for t in candidates}
+                _append_log(run_id, f"[modo shadow] Los modelos de precio habrían elegido: {pr_top} "
+                            f"({len(set(pr_top) & cur)}/{len(cur)} coinciden con la selección real).")
+            else:
+                _append_log(run_id, "[modo shadow] Modelos de precio: sin modelo entrenado o sin features todavía.")
 
         candidates = [t for t in candidates if t.get("symbol") not in already_tracked]
         skipped_unevaluable = len([t for t, _, _ in survivors if t.get("symbol") in unevaluable_symbols])

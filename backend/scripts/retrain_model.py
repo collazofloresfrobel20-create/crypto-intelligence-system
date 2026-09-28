@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.db import init_db
 from app.dynamic_config import load_dynamic_config
 from app.config import settings
-from app import ml_scoring
+from app import ml_scoring, price_models
 from app.backtesting import MIN_SAMPLE_FOR_CONFIDENCE
 
 RETRAIN_INTERVAL_DAYS = 6
@@ -87,8 +87,39 @@ def retrain_calibration():
     print(f"[calibration] Curva de calibración reentrenada con {len(rows)} casos. Métricas: {metrics}")
 
 
+def retrain_price_models():
+    """Plan v2, B2: tres modelos con las features de precio gratuitas (touch20 / sustained10 /
+    drop20). Cada uno se guarda con su validación agrupada por token, la prueba fuera de tiempo y,
+    para la etiqueta primaria, el veredicto del criterio PRERREGISTRADO (PREREGISTRO.md) -- el
+    dashboard solo muestra esto; activar PRICE_MODEL_MODE sigue siendo una decisión humana."""
+    if not _due("price_sustained10"):
+        return
+    rows = price_models.fetch_training_rows()
+    n_tokens = len({r["token"] for r in rows})
+    if n_tokens < price_models.MIN_TOKENS_TO_TRAIN:
+        print(f"[price] Solo {n_tokens} tokens distintos con features de precio y resultado "
+              f"(< {price_models.MIN_TOKENS_TO_TRAIN}): no se entrena todavía. "
+              "(Falta correr scripts/backfill_price_features.py o esperar más ciclos.)")
+        return
+    for label in price_models.LABELS:
+        ev = price_models.evaluate_grouped(rows, label)
+        oot = price_models.out_of_time_check(rows, label)
+        model = price_models.train(rows, label)
+        if model is None:
+            print(f"[price_{label}] sin dos clases o pocos tokens: no se guarda.")
+            continue
+        metrics = {"features": price_models.FEATURE_NAMES, "grouped_validation": ev, "out_of_time": oot}
+        if label == "sustained10":
+            metrics["preregistered_activation"] = price_models.activation_verdict(ev, oot)
+        ml_scoring.save_model(model, price_models.KIND_PREFIX + label, len(rows), metrics)
+        print(f"[price_{label}] entrenado con {len(rows)} filas / {n_tokens} tokens. "
+              f"AUC modelo {ev.get('auc_model')} vs base vol/mcap {ev.get('auc_baseline_vol_mcap')} "
+              f"(dAUC {ev.get('dauc_mean')}, IC95 {ev.get('dauc_ci95')}).")
+
+
 if __name__ == "__main__":
     init_db()
     load_dynamic_config()
     retrain_selector()
     retrain_calibration()
+    retrain_price_models()

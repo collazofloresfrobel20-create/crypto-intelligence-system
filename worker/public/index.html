@@ -436,6 +436,28 @@
     <hr class="rule">
 
     <section class="block">
+      <h2>Modelos de precio (selección por volatilidad y momentum)</h2>
+      <p class="desc">
+        Tres modelos entrenados con datos de precio gratuitos (sin LLM) sobre todos los tokens con
+        resultado, no solo los pocos analizados. En modo <strong>shadow</strong> (por defecto) solo se
+        calcula su probabilidad en cada token y se compara; <strong>active</strong> elige los candidatos
+        excluyendo el cuartil de mayor riesgo de caída y ordenando por éxito sostenido. Los criterios para
+        activarlo se fijaron de antemano (PREREGISTRO.md); activarlo es decisión tuya, nunca automática.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Modo
+          <select id="cfgPriceMode">
+            <option value="shadow">Shadow (observar, no decide)</option>
+            <option value="active">Activo (decide la selección real)</option>
+          </select>
+        </label>
+      </div>
+      <div id="priceModelsBox" style="margin-top:14px;"><div class="empty-state">Aún no hay modelos de precio entrenados (falta el backfill de features o más ciclos).</div></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
       <h2>Segunda opinión del Juez (Groq)</h2>
       <p class="desc">
         Además de Gemini, cada veredicto se contrasta con una segunda opinión independiente
@@ -1299,6 +1321,7 @@ async function loadConfig() {
   $("cfgMaxCandidates").value = cfg.MAX_CANDIDATES_PER_RUN;
   $("cfgMinConfidence").value = cfg.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY;
   $("cfgMlMode").value = cfg.ML_SCORING_MODE || "shadow";
+  $("cfgPriceMode").value = cfg.PRICE_MODEL_MODE || "shadow";
   $("cfgEnsembleMode").value = cfg.ENSEMBLE_JUDGE_MODE || "shadow";
   const verdictValues = cfg.VERDICT_VALUES || ["Strong Opportunity", "Watchlist", "High Risk / Speculative", "Reject", "Insufficient Evidence"];
   const notifyVerdicts = new Set(cfg.TELEGRAM_NOTIFY_VERDICTS || ["Strong Opportunity"]);
@@ -1317,10 +1340,49 @@ async function loadConfig() {
     <tr><td>Bloqueo de login</td><td>${cfg.LOGIN_MAX_ATTEMPTS} intentos fallidos &rarr; ${cfg.LOGIN_LOCKOUT_MINUTES} min de bloqueo</td></tr>
   `;
   loadMlBenchmark();
+  loadPriceModels();
 }
 
 function mlMetricRow(label, ml, heuristic) {
   return `<tr><td>${label}</td><td>${ml}</td><td>${heuristic}</td></tr>`;
+}
+
+async function loadPriceModels() {
+  const box = $("priceModelsBox");
+  const labels = {
+    touch20: "Tocó +20% en algún momento (etiqueta histórica)",
+    sustained10: "Cerró el horizonte en +10% o más (etiqueta primaria)",
+    drop20: "Cayó 20% o más en algún momento (riesgo)",
+  };
+  const rows = [];
+  let pre = null, trained = null, nSamples = null;
+  for (const k of ["touch20", "sustained10", "drop20"]) {
+    let m;
+    try { m = await api("/api/ml-models/price_" + k); } catch (e) { continue; }
+    const g = (m.metrics || {}).grouped_validation || {};
+    const o = (m.metrics || {}).out_of_time || {};
+    trained = m.trained_at; nSamples = m.n_samples;
+    if (k === "sustained10") pre = (m.metrics || {}).preregistered_activation;
+    const f = x => x == null ? "-" : x;
+    rows.push(`<tr><td>${labels[k]}</td><td>${f(g.n_tokens)}</td><td>${f(g.auc_model)}</td>
+      <td>${f(g.auc_baseline_vol_mcap)}</td><td>${f(g.dauc_floor_mean)} <span class="muted">(${f((g.dauc_floor_ci95 || [])[0])} a ${f((g.dauc_floor_ci95 || [])[1])})</span></td>
+      <td>${f(o.dauc_floor)}</td></tr>`);
+  }
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty-state">Aún no hay modelos de precio entrenados (falta el backfill de features o más ciclos).</div>';
+    return;
+  }
+  const checks = pre ? Object.entries(pre.checks).map(([c, ok]) => `<li>${c}: <strong>${ok ? "cumple" : "no cumple"}</strong></li>`).join("") : "";
+  box.innerHTML = `
+    <p class="muted">Último entrenamiento: ${new Date(trained).toLocaleString()} &middot; ${nSamples} filas.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Modelo</th><th>Tokens</th><th>AUC modelo</th><th>AUC solo vol/mcap</th><th>Mejora sobre max(base, 0.5) (IC 95%)</th><th>Fuera de tiempo</th></tr></thead>
+      <tbody>${rows.join("")}</tbody>
+    </table></div>
+    <p class="muted" style="margin-top:6px;max-width:70ch;">AUC 0.5 = azar. Validación en particiones agrupadas por token (ningún token está a la vez en entrenamiento y prueba).</p>
+    ${pre ? `<div class="section-title" style="margin-top:18px;">Criterio de activación prerregistrado (etiqueta primaria): ${pre.meets_criteria ? "se cumple" : "NO se cumple todavía"}</div>
+    <ul class="compact">${checks}</ul>` : ""}
+  `;
 }
 
 async function loadMlBenchmark() {
@@ -1369,6 +1431,7 @@ $("btnSaveConfig").onclick = async () => {
     MAX_CANDIDATES_PER_RUN: parseInt($("cfgMaxCandidates").value),
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: parseInt($("cfgMinConfidence").value),
     ML_SCORING_MODE: $("cfgMlMode").value,
+    PRICE_MODEL_MODE: $("cfgPriceMode").value,
     ENSEMBLE_JUDGE_MODE: $("cfgEnsembleMode").value,
     TELEGRAM_NOTIFY_VERDICTS: Array.from(document.querySelectorAll(".cfgTelegramVerdict:checked")).map(el => el.value),
   };

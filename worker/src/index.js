@@ -21,6 +21,7 @@ const ADJUSTABLE_PARAMS = {
   MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: "int",
   // Fase 1/2 (2026-09-24): decisión humana, nunca tocada por el flujo de auto-corrección.
   ML_SCORING_MODE: "enum:shadow,active",
+  PRICE_MODEL_MODE: "enum:shadow,active",
   ENSEMBLE_JUDGE_MODE: "enum:shadow,active",
   // Fase 5 (2026-09-24): idem -- qué veredictos disparan Telegram, decisión humana.
   TELEGRAM_NOTIFY_VERDICTS: "multienum:" + VERDICT_VALUES.join(","),
@@ -295,6 +296,7 @@ async function handleApi(path, request, env) {
     return json({
       ...cfg,
       ML_SCORING_MODE: overrides.ML_SCORING_MODE || "shadow",
+      PRICE_MODEL_MODE: overrides.PRICE_MODEL_MODE || "shadow",
       MIN_SAMPLES_FOR_ML: 30,
       ENSEMBLE_JUDGE_MODE: overrides.ENSEMBLE_JUDGE_MODE || "shadow",
       TELEGRAM_NOTIFY_VERDICTS: overrides.TELEGRAM_NOTIFY_VERDICTS

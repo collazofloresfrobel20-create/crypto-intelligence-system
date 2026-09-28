@@ -89,6 +89,13 @@ class Settings:
     # de la Fase 1.5 -- nunca automática.
     ML_SCORING_MODE = os.getenv("ML_SCORING_MODE", "shadow")
 
+    # --- Plan v2, B2 (2026-09-28): modelos de precio (features gratuitas de klines) ---
+    # "shadow" (por defecto): se calculan y se guardan pm_* en cada fila, pero los candidatos se
+    # siguen eligiendo como antes. "active": los candidatos se eligen con price_models
+    # (excluye el cuartil de mayor riesgo de caida y ordena por exito sostenido). Decision humana
+    # desde el dashboard, informada por el criterio prerregistrado en PREREGISTRO.md.
+    PRICE_MODEL_MODE = os.getenv("PRICE_MODEL_MODE", "shadow")
+
     # --- Fase 2 (2026-09-24): segunda opinión del Juez vía Groq (free tier permanente, sin
     # facturación requerida -- a diferencia del grounding de Gemini que dejó de ser gratis) ---
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")

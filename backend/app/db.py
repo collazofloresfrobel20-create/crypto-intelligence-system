@@ -212,6 +212,11 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN dist_from_low_pct REAL",
     "ALTER TABLE predictions ADD COLUMN range_pos_7d REAL",
     "ALTER TABLE predictions ADD COLUMN vol_trend_24h_vs_7d REAL",
+    # Plan v2, B2: probabilidad que cada modelo de precio asignó AL DESCUBRIR (aunque el modelo no
+    # decida nada todavía) -> historial fuera de muestra que se acumula solo, sin gastar LLM.
+    "ALTER TABLE predictions ADD COLUMN pm_touch20 REAL",
+    "ALTER TABLE predictions ADD COLUMN pm_sustained10 REAL",
+    "ALTER TABLE predictions ADD COLUMN pm_drop20 REAL",
 ]
 
 
