@@ -20,6 +20,7 @@ from datetime import date
 from google import genai
 from google.genai import types
 
+from . import usage_log
 from .config import settings
 from .db import get_conn
 
@@ -135,7 +136,11 @@ def generate_json(
                 )
                 text = (resp.text or "").strip()
                 text = _strip_code_fences(text)
-                return json.loads(text)
+                parsed = json.loads(text)
+                um = getattr(resp, "usage_metadata", None)
+                usage_log.record("gemini", model, getattr(um, "prompt_token_count", None),
+                                 getattr(um, "candidates_token_count", None))
+                return parsed
             except json.JSONDecodeError as e:
                 last_error = e
                 time.sleep(1.5 * (attempt + 1))

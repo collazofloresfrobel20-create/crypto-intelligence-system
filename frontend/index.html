@@ -361,6 +361,14 @@
     <hr class="rule">
 
     <section class="block">
+      <h2>Edge contra el control</h2>
+      <p class="desc">Compara lo que el sistema eligió contra los tokens descartados <strong>del mismo ciclo</strong> (mismas condiciones de mercado). Sin este emparejado, un mercado alcista hace parecer bueno a cualquier método. Se muestran tres formas de medir el resultado porque &laquo;tocó +20%&raquo; también premia a los tokens muy volátiles, que igual suben que se desploman.</p>
+      <div id="edgeBox"><div class="empty-state">Se calcula al final de cada actualización.</div></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
       <h2>Auto-corrección</h2>
       <p class="desc">Diagnóstico automático generado tras cada actualización con evaluaciones nuevas.</p>
       <div id="diagnosisBox"><div class="empty-state">Aún no hay diagnósticos.</div></div>
@@ -1025,6 +1033,7 @@ function onCycleFinished() {
   api("/api/backtest/stats").then(renderStats).catch(() => renderStats({ evaluated_predictions: 0 }));
   api("/api/backtest/filter-efficacy").then(renderEfficacy).catch(() => renderEfficacy(null));
   api("/api/history/overview").then(renderHistory).catch(() => renderHistory(null));
+  loadEdge();
   loadDiagnosis();
 }
 
@@ -1106,6 +1115,66 @@ function renderStats(s) {
     <p class="muted">${s.evaluated_predictions} de ${s.total_predictions} predicciones evaluadas hasta ahora, agrupadas por qué tan seguro estaba el Juez:</p>
     <ul class="compact">${Object.entries(s.accuracy_by_confidence_bucket).map(([b,v]) => `<li>Confidence ${b}: ${v.success_rate_pct}% de éxito (n=${v.n})</li>`).join("")}</ul>
   `;
+}
+
+function renderEdge(snap) {
+  const box = $("edgeBox");
+  const e = snap && snap.payload;
+  if (!e || !e.labels) {
+    box.innerHTML = '<div class="empty-state">Se calcula al final de cada actualización.</div>';
+    return;
+  }
+  const pc = x => x == null ? "-" : (x * 100).toFixed(1) + "%";
+  const pp = x => x == null ? "-" : (x > 0 ? "+" : "") + (x * 100).toFixed(1) + " pp";
+  const labelRows = Object.values(e.labels).map(l => `
+    <tr><td>${l.title}</td><td>${pc(l.analyzed_rate)}</td><td>${pc(l.control_rate)}</td>
+    <td>${pp(l.matched_edge)} <span class="muted">(${pp(l.matched_ci95[0])} a ${pp(l.matched_ci95[1])})</span></td>
+    <td>${l.distinguishable_from_zero ? "Sí" : "No"}</td></tr>`).join("");
+  const weekRows = Object.entries(e.weekly || {}).map(([w, v]) => `
+    <tr><td>${w}</td><td>${pc(v.control_rate)} <span class="muted">(n=${v.control_n})</span></td>
+    <td>${v.analyzed_n ? pc(v.analyzed_rate) + ' <span class="muted">(n=' + v.analyzed_n + ')</span>' : "-"}</td></tr>`).join("");
+  const regimeRows = Object.entries(e.by_regime || {}).map(([t, v]) => `
+    <tr><td>BTC en ${t}</td><td>${pc(v.control_rate)} <span class="muted">(n=${v.control_n})</span></td>
+    <td>${v.analyzed_n ? pc(v.analyzed_rate) + ' <span class="muted">(n=' + v.analyzed_n + ')</span>' : "-"}</td></tr>`).join("");
+  const bl = (e.baselines_auc || {}).touch20 || {};
+  const baseRows = Object.entries(bl).map(([n, v]) => `
+    <tr><td>${n}</td><td>${v.auc ?? "-"} <span class="muted">(${v.ci95[0] ?? "-"} a ${v.ci95[1] ?? "-"})</span></td></tr>`).join("");
+  const pw = e.power;
+  box.innerHTML = `
+    <div class="numbers-row">
+      ${numItem(e.matched.analyzed_tokens, "Tokens analizados comparables")}
+      ${numItem(e.matched.runs, "Ciclos con al menos " + e.min_controls_per_run + " controles")}
+      ${numItem(e.control.rows, "Filas de control evaluadas")}
+    </div>
+    <div class="section-title" style="margin-top:22px;">Analizados frente al control del mismo ciclo</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Forma de medir</th><th>Analizados</th><th>Control</th><th>Diferencia emparejada (IC 95%)</th><th>Distinguible de cero</th></tr></thead>
+      <tbody>${labelRows}</tbody>
+    </table></div>
+    <p class="muted" style="margin-top:6px;max-width:70ch;">Los intervalos se calculan remuestreando tokens completos, no filas: varias filas de un mismo token no son observaciones independientes. Un intervalo que incluye 0 significa que todavía no se puede afirmar diferencia, ni a favor ni en contra.</p>
+    ${pw ? `<p class="muted" style="max-width:70ch;">Para detectar una diferencia de 5 puntos harían falta unas ${pw.independent_predictions_needed["5pp"]} predicciones independientes; para 10 puntos, unas ${pw.independent_predictions_needed["10pp"]}. Hoy hay ${pw.tokens_available_now} tokens distintos.</p>` : ''}
+    <div class="section-title" style="margin-top:22px;">El mercado cambia el resultado (etiqueta: tocó +20%)</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Semana</th><th>Control</th><th>Analizados</th></tr></thead>
+      <tbody>${weekRows}</tbody>
+    </table></div>
+    ${regimeRows ? `<div class="section-title" style="margin-top:22px;">Por régimen de Bitcoin al momento de la predicción</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Régimen</th><th>Control</th><th>Analizados</th></tr></thead>
+      <tbody>${regimeRows}</tbody>
+    </table></div>` : ''}
+    ${baseRows ? `<div class="section-title" style="margin-top:22px;">¿El Juez supera a una señal gratuita? (AUC, 0.5 = azar)</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Señal</th><th>AUC (IC 95%)</th></tr></thead>
+      <tbody>${baseRows}</tbody>
+    </table></div>` : ''}
+    <p class="muted" style="margin-top:8px;">Calculado ${new Date(e.computed_at).toLocaleString()}. Acciones tokenizadas excluidas.</p>
+  `;
+}
+
+async function loadEdge() {
+  try { renderEdge(await api("/api/analytics/edge_report")); }
+  catch (_) { renderEdge(null); }
 }
 
 function renderEfficacy(e) {
@@ -1329,6 +1398,7 @@ $("btnSaveConfig").onclick = async () => {
   renderStats(await api("/api/backtest/stats").catch(() => null));
   renderEfficacy(await api("/api/backtest/filter-efficacy").catch(() => null));
   renderHistory(await api("/api/history/overview").catch(() => null));
+  loadEdge();
   loadDiagnosis();
   checkActiveRunOnLoad();
 })();

@@ -3,7 +3,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring
+from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring, market_regime
 from .config import settings
 from .db import get_conn
 from .market_stats import compute_market_stats
@@ -130,6 +130,35 @@ def build_context(token: dict, market_stats: dict, goplus_report: dict | None, h
     return json.dumps(context, ensure_ascii=False, default=str)
 
 
+# Fuentes sin las cuales el análisis queda "ciego" en su área principal (Fase A, 2026-09-28).
+# Encontrado midiendo el historial: antes del 25-sep, 0 de 196 análisis tenían concentración de
+# holders de GoPlus y lo único que quedaba era una línea en el log -- nadie lo veía.
+CRITICAL_SOURCES = ("market_klines", "security_goplus")
+
+
+def assess_data_quality(token: dict, market_stats: dict | None, security_report: dict | None,
+                        holder_history: list[dict]) -> dict:
+    """Qué fuentes respondieron de verdad para este análisis. Solo se registra: NO cambia el
+    veredicto ni el confidence (primero se mide si data_completeness predice el resultado --
+    los analistas ya ven 'no disponible' en su contexto cuando falta GoPlus)."""
+    sources = {
+        "market_klines": bool(market_stats) and "error" not in market_stats,
+        "security_goplus": security_report is not None,
+        "holder_concentration": holder_concentration_pct(security_report) is not None,
+        "own_history_2plus_points": len(holder_history or []) >= 2,
+        "holders_count": token.get("holders") is not None,
+        "supply_data": token.get("totalSupply") is not None and token.get("circulatingSupply") is not None,
+        "live_web_search": bool(settings.GEMINI_ENABLE_SEARCH_GROUNDING),
+    }
+    missing = [k for k, ok in sources.items() if not ok]
+    return {
+        "sources": sources,
+        "missing": missing,
+        "critical_missing": [k for k in CRITICAL_SOURCES if not sources[k]],
+        "completeness": round(sum(sources.values()) / len(sources), 3),
+    }
+
+
 def research_token(token: dict, run_id: str | None = None, security_report=_UNSET) -> dict:
     """Ejecuta research+debate+juez para un token. Devuelve el dict listo para guardar
     (category='analyzed', o 'discarded' si se confirma tarde que no cumple MIN_HOLDERS -- ver
@@ -169,6 +198,7 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
             )
 
     holder_history = get_holder_history(symbol)
+    data_quality = assess_data_quality(token, market_stats, security_report, holder_history)
 
     context = build_context(token, market_stats, security_report, holder_history)
 
@@ -254,6 +284,8 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
         "mediator_contradictions_count": len(mediator.get("contradictions", []) or []),
         "listing_age_days_at_discovery": filters.token_age_days(token),
         "pct_change_24h_at_discovery": filters.pct_change_24h(token),
+        "data_quality": json.dumps(data_quality, ensure_ascii=False),
+        "data_completeness": data_quality["completeness"],
         **goplus.extract_security_features(security_report),
     }
 
@@ -318,8 +350,9 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 listing_age_days_at_discovery, pct_change_24h_at_discovery,
                 creator_percent, owner_percent, lp_holders_locked_pct, is_honeypot, is_mintable,
                 key_evidence, main_risks, system_note, project_explainer, agent_findings, horizon_days,
+                data_quality, data_completeness, market_regime,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -339,7 +372,9 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data["creator_percent"], data["owner_percent"], data["lp_holders_locked_pct"],
                 data["is_honeypot"], data["is_mintable"],
                 data["key_evidence"], data["main_risks"], data["system_note"],
-                data["project_explainer"], data["agent_findings"], data["horizon_days"], _now(),
+                data["project_explainer"], data["agent_findings"], data["horizon_days"],
+                data.get("data_quality"), data.get("data_completeness"), data.get("market_regime"),
+                _now(),
             ),
         )
         return result.lastrowid
@@ -474,6 +509,12 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         universe = universe + dex_universe
         _append_log(run_id, f"Universo total combinado: {len(universe)} tokens.")
 
+        # Fase A (2026-09-28): régimen de mercado (BTC) de este ciclo, estampado en todas las
+        # filas que se guarden (analizadas y descartadas) para poder condicionar el benchmark.
+        regime = market_regime.regime_json()
+        _append_log(run_id, f"Régimen de mercado (BTC): {regime}" if regime else
+                    "Régimen de mercado (BTC): no disponible este ciclo (las filas quedan sin etiqueta de régimen).")
+
         already_tracked = _recently_tracked_symbols()
         unevaluable_symbols = _permanently_unevaluable_symbols()
         open_analysis_symbols = _symbols_with_open_analysis()
@@ -490,7 +531,9 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
             if token.get("symbol") in already_tracked:
                 continue
             try:
-                _save_entry(run_id, discarded_entry(token, reasons, margins))
+                entry = discarded_entry(token, reasons, margins)
+                entry["market_regime"] = regime
+                _save_entry(run_id, entry)
                 new_discarded += 1
             except Exception:
                 pass
@@ -543,6 +586,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 addr = token.get("contractAddress")
                 cached_report = security_cache.get(addr, _UNSET) if addr else _UNSET
                 data = research_token(token, run_id=run_id, security_report=cached_report)
+                data["market_regime"] = regime
                 pred_id = _save_entry(run_id, data)
                 _append_log(run_id, f"[{i}/{len(candidates)}] {symbol}: veredicto = {data.get('verdict')}")
                 consecutive_failures = 0
@@ -583,6 +627,14 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                     _append_log(run_id, "Diagnóstico de auto-corrección generado.")
             except Exception as e:
                 _append_log(run_id, f"No se pudo generar diagnóstico: {e}")
+
+        # Fase A (2026-09-28): panel "Edge vs control" precalculado para el dashboard.
+        try:
+            from . import edge_report
+            edge_report.compute_and_store(universe)
+            _append_log(run_id, "Panel 'Edge vs control' actualizado.")
+        except Exception as e:
+            _append_log(run_id, f"No se pudo actualizar el panel 'Edge vs control': {e}")
 
         _append_log(run_id, "Ciclo completado.")
         _finish_run(run_id, "done")

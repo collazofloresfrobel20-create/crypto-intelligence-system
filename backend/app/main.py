@@ -267,6 +267,19 @@ def api_latest_ml_model(kind: str):
     return meta
 
 
+@app.get("/api/analytics/{kind}")
+def api_latest_analytics(kind: str):
+    """Análisis precalculado al final de cada ciclo (analytics_snapshots), p. ej. 'edge_report'."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT kind, computed_at, payload FROM analytics_snapshots WHERE kind = ? ORDER BY id DESC LIMIT 1",
+            (kind,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, f"aún no hay ningún análisis de tipo '{kind}'")
+    return row_to_dict(row)
+
+
 @app.post("/api/config")
 def update_config(body: ConfigUpdateBody):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}

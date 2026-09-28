@@ -127,6 +127,27 @@ CREATE TABLE IF NOT EXISTS ml_models (
                                   -- GitHub Actions son máquinas desechables sin disco persistente)
 );
 CREATE INDEX IF NOT EXISTS idx_ml_models_kind_trained ON ml_models (kind, trained_at);
+
+-- Plan de correcciones, Fase A (2026-09-28): consumo real de tokens por llamada a un LLM, para
+-- poder proyectar el costo si algún día se sale del free tier (hoy solo se contaban llamadas).
+CREATE TABLE IF NOT EXISTS llm_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    provider TEXT NOT NULL,      -- 'gemini' | 'groq'
+    model TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER
+);
+
+-- Análisis estadísticos precalculados en Python al final de cada ciclo (el Worker no ejecuta
+-- Python ni numpy): el dashboard solo lee el más reciente de cada tipo.
+CREATE TABLE IF NOT EXISTS analytics_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,          -- 'edge_report'
+    computed_at TEXT NOT NULL,
+    payload TEXT NOT NULL        -- JSON
+);
+CREATE INDEX IF NOT EXISTS idx_analytics_kind_computed ON analytics_snapshots (kind, computed_at);
 """
 
 _SCHEMA_STATEMENTS = [s.strip() for s in SCHEMA.split(";") if s.strip()]
@@ -176,6 +197,12 @@ _MIGRATIONS = [
     # Fase 5 (alertas + dedup, 2026-09-24): guardia de idempotencia explícita para Telegram --
     # defensiva, ante futuros cambios en la lógica de exclusión de re-research.
     "ALTER TABLE predictions ADD COLUMN notified_at TEXT",
+    # Plan de correcciones, Fase A (2026-09-28): qué fuentes de datos respondieron de verdad al
+    # analizar (antes solo quedaba una línea en el log), qué fracción de ellas, y en qué régimen
+    # de mercado (BTC) se hizo la predicción -- para condicionar el benchmark, ver H2 del plan.
+    "ALTER TABLE predictions ADD COLUMN data_quality TEXT",
+    "ALTER TABLE predictions ADD COLUMN data_completeness REAL",
+    "ALTER TABLE predictions ADD COLUMN market_regime TEXT",
 ]
 
 
@@ -253,7 +280,7 @@ def row_to_dict(row) -> dict:
     d = dict(row)
     for key in ("key_evidence", "main_risks", "agent_findings", "rejection_reasons",
                 "patterns_found", "proposed_adjustments", "applied_adjustments",
-                "rejection_margins", "metrics"):
+                "rejection_margins", "metrics", "data_quality", "market_regime", "payload"):
         if d.get(key):
             try:
                 d[key] = json.loads(d[key])

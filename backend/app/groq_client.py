@@ -15,6 +15,7 @@ import time
 
 import requests
 
+from . import usage_log
 from .config import settings
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -55,11 +56,14 @@ def generate_json(
         try:
             resp = requests.post(GROQ_API_URL, headers=headers, json=body, timeout=30)
             resp.raise_for_status()
-            text = resp.json()["choices"][0]["message"]["content"]
+            payload = resp.json()
+            text = payload["choices"][0]["message"]["content"]
             data = json.loads(text)
             missing = [k for k in required_keys if k not in data]
             if missing:
                 raise ValueError(f"Groq devolvió JSON sin las claves requeridas: {missing}")
+            usage = payload.get("usage") or {}
+            usage_log.record("groq", model, usage.get("prompt_tokens"), usage.get("completion_tokens"))
             return data
         except (json.JSONDecodeError, ValueError) as e:
             last_error = e

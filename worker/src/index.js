@@ -326,5 +326,16 @@ async function handleApi(path, request, env) {
     return json(rowWithJson(row));
   }
 
+  const analyticsMatch = path.match(/^\/api\/analytics\/([\w-]+)$/);
+  if (analyticsMatch && request.method === "GET") {
+    const kind = analyticsMatch[1];
+    const row = await db.one(
+      "SELECT kind, computed_at, payload FROM analytics_snapshots WHERE kind = ? ORDER BY id DESC LIMIT 1",
+      [kind]
+    );
+    if (!row) return json({ detail: `aún no hay ningún análisis de tipo '${kind}'` }, 404);
+    return json(rowWithJson(row));
+  }
+
   return json({ detail: "no encontrado" }, 404);
 }

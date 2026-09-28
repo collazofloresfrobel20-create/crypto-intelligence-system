@@ -164,6 +164,25 @@ reintentos): el ciclo sigue normal con solo el veredicto de Gemini, `secondary_j
 caída de un tercero. Necesitas crear el secret `GROQ_API_KEY` en GitHub Actions manualmente
 (gratis en [console.groq.com](https://console.groq.com)) para que esto funcione en producción.
 
+### 9. Medición honesta del edge (Plan de correcciones, Fase A, 2026-09-28)
+
+Motivo: al medir el historial real se vio que (a) el acierto del grupo de control cambia de 21% a
+43% entre semanas, así que un promedio global engaña; (b) "tocó +20%" premia tokens volátiles, que
+igual suben que se desploman; (c) las filas de un mismo token no son observaciones independientes
+(164 filas eran 54 tokens); (d) durante semanas el análisis corrió sin datos de GoPlus y solo
+quedaba una línea en el log. Nada de esto cambia veredictos ni modelos; solo mide y registra:
+
+- **Calidad de datos por análisis** (`data_quality`, `data_completeness`): qué fuentes respondieron
+  de verdad (klines, GoPlus, concentración de holders, historial propio, supply, búsqueda web).
+  Solo se registra; primero se mide si predice el resultado antes de usarlo para topar el confidence.
+- **Régimen de mercado** (`market_regime`): tendencia y volatilidad de BTC al momento del ciclo,
+  estampado en todas las filas (analizadas y descartadas). Etiqueta descriptiva, no pausa nada.
+- **Uso real de tokens por LLM** (`llm_usage`) para proyectar costos si algún día se sale del free tier.
+- **Panel "Edge contra el control"** (pestaña Auto-corrección; `edge_report.py`, precalculado al final
+  de cada ciclo en `analytics_snapshots`): analizados vs descartados **del mismo ciclo** (solo ciclos con
+  >= 10 controles, con menos el control es ruido), tres etiquetas (tocó +20% / cerró >= +10% / cayó
+  >= 20%), IC95 remuestreando tokens, análisis de potencia y AUC del Juez frente a volumen/market cap.
+
 ## Acceso privado
 El dashboard entero (frontend + API) queda detrás de un login simple de usuario/contraseña — sin
 sesión válida, cualquier ruta redirige a `/login` (o devuelve 401 en API). Es un solo usuario fijo,
