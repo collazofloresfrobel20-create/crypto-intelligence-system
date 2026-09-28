@@ -329,10 +329,12 @@ async function handleApi(path, request, env) {
   const analyticsMatch = path.match(/^\/api\/analytics\/([\w-]+)$/);
   if (analyticsMatch && request.method === "GET") {
     const kind = analyticsMatch[1];
+    // Si la tabla aún no existe (se crea en el primer ciclo tras el despliegue), es lo mismo
+    // que "todavía no hay análisis": no debe salir como error 500.
     const row = await db.one(
       "SELECT kind, computed_at, payload FROM analytics_snapshots WHERE kind = ? ORDER BY id DESC LIMIT 1",
       [kind]
-    );
+    ).catch(() => null);
     if (!row) return json({ detail: `aún no hay ningún análisis de tipo '${kind}'` }, 404);
     return json(rowWithJson(row));
   }
