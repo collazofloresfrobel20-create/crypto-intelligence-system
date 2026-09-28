@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring, market_regime
 from .config import settings
 from .db import get_conn
-from .market_stats import compute_market_stats
+from .market_stats import compute_market_stats, price_features
 from .agents.research import ALL_ANALYSTS
 from .agents.debate import bull_agent, bear_agent, mediator_agent, judge_agent
 
@@ -159,7 +159,7 @@ def assess_data_quality(token: dict, market_stats: dict | None, security_report:
     }
 
 
-def research_token(token: dict, run_id: str | None = None, security_report=_UNSET) -> dict:
+def research_token(token: dict, run_id: str | None = None, security_report=_UNSET, market_stats: dict | None = None) -> dict:
     """Ejecuta research+debate+juez para un token. Devuelve el dict listo para guardar
     (category='analyzed', o 'discarded' si se confirma tarde que no cumple MIN_HOLDERS -- ver
     abajo). El caller (_save_entry) guarda cualquiera de los dos uniformemente.
@@ -174,7 +174,8 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
     alpha_id = token.get("alphaId")
     is_binance = token.get("source", "binance_alpha") == "binance_alpha"
 
-    market_stats = compute_market_stats(alpha_id) if alpha_id else dexscreener.to_market_stats(token)
+    if market_stats is None:  # B1: el ciclo ya las calculó en lote para el ranking -> se reusan
+        market_stats = compute_market_stats(alpha_id) if alpha_id else dexscreener.to_market_stats(token)
     # B0 (2026-09-28): sin klines no hay forma de evaluar esta predicción contra precio real
     # (31 análisis del historial quedaron 'unevaluable' tras gastar las 11 llamadas de Gemini).
     # Se registra como descartado ANTES de gastar cuota. Solo aplica a Binance Alpha: las demás
@@ -296,11 +297,12 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
         "pct_change_24h_at_discovery": filters.pct_change_24h(token),
         "data_quality": json.dumps(data_quality, ensure_ascii=False),
         "data_completeness": data_quality["completeness"],
+        **price_features(market_stats),
         **goplus.extract_security_features(security_report),
     }
 
 
-def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None = None) -> dict:
+def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None = None, stats: dict | None = None) -> dict:
     """Registro ligero (sin research LLM) para un token rechazado por hard filters. Se
     trackea para poder comparar después si el rechazo estuvo justificado. `margins` (Fase 0,
     2026-09-24) guarda, por cada filtro que falló, qué tan cerca estuvo de pasar -- permite
@@ -335,6 +337,7 @@ def discarded_entry(token: dict, reasons: list[str], margins: list[dict] | None 
         "pct_change_24h_at_discovery": filters.pct_change_24h(token),
         "creator_percent": None, "owner_percent": None, "lp_holders_locked_pct": None,
         "is_honeypot": None, "is_mintable": None,
+        **price_features(stats),
         "horizon_days": settings.PREDICTION_HORIZON_DAYS,
     }
 
@@ -361,8 +364,10 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 creator_percent, owner_percent, lp_holders_locked_pct, is_honeypot, is_mintable,
                 key_evidence, main_risks, system_note, project_explainer, agent_findings, horizon_days,
                 data_quality, data_completeness, market_regime,
+                vol_hourly_pct, momentum_7d_pct, max_drawdown_7d_pct, dist_from_high_pct,
+                dist_from_low_pct, range_pos_7d, vol_trend_24h_vs_7d,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -384,6 +389,9 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data["key_evidence"], data["main_risks"], data["system_note"],
                 data["project_explainer"], data["agent_findings"], data["horizon_days"],
                 data.get("data_quality"), data.get("data_completeness"), data.get("market_regime"),
+                data.get("vol_hourly_pct"), data.get("momentum_7d_pct"), data.get("max_drawdown_7d_pct"),
+                data.get("dist_from_high_pct"), data.get("dist_from_low_pct"), data.get("range_pos_7d"),
+                data.get("vol_trend_24h_vs_7d"),
                 _now(),
             ),
         )
@@ -399,6 +407,21 @@ def _recently_tracked_symbols(hours: int = 20) -> set[str]:
             "SELECT DISTINCT symbol FROM predictions WHERE created_at >= ?", (cutoff,)
         ).fetchall()
     return {r["symbol"] for r in rows}
+
+
+def _stats_for(token: dict, cache: dict, counter: list) -> dict | None:
+    """Klines de 1h (features de precio) de un token de Binance Alpha, con caché por alphaId
+    para que ranking y research no pidan lo mismo dos veces. None para fuentes sin klines
+    (DexScreener). Pausa corta cada 5 llamadas nuevas para no disparar ráfagas contra Binance."""
+    alpha_id = token.get("alphaId")
+    if not alpha_id:
+        return None
+    if alpha_id not in cache:
+        cache[alpha_id] = compute_market_stats(alpha_id)
+        counter[0] += 1
+        if counter[0] % 5 == 0:
+            time.sleep(0.5)
+    return cache[alpha_id]
 
 
 def is_dead_token(token: dict) -> bool:
@@ -541,6 +564,9 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         unevaluable_symbols = _permanently_unevaluable_symbols()
         open_analysis_symbols = _symbols_with_open_analysis()
 
+        stats_cache: dict[str, dict] = {}
+        stats_calls = [0]
+
         survivors, discarded = [], []
         for token in universe:
             ok, reasons, margins = filters.passes_hard_filters_with_margins(token)
@@ -558,7 +584,8 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 skipped_dead += 1
                 continue
             try:
-                entry = discarded_entry(token, reasons, margins)
+                stats = None if is_dead_token(token) else _stats_for(token, stats_cache, stats_calls)
+                entry = discarded_entry(token, reasons, margins, stats=stats)
                 entry["market_regime"] = regime
                 _save_entry(run_id, entry)
                 new_discarded += 1
@@ -574,6 +601,10 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         # universo completo) -- alimenta tanto el scoring ML de abajo como, para los ~15
         # finalmente seleccionados, se reusa en research_token() sin volver a llamar a GoPlus.
         security_cache = _batch_fetch_security(eligible_survivors, run_id)
+        for t in eligible_survivors:  # B1: features de precio de los sobrevivientes (ranking + research)
+            _stats_for(t, stats_cache, stats_calls)
+        ok_stats = sum(1 for v in stats_cache.values() if v and "error" not in v)
+        _append_log(run_id, f"Features de precio (klines 1h): {ok_stats}/{len(stats_cache)} tokens con datos ({stats_calls[0]} llamadas a Binance).")
 
         # Fase 1 (2026-09-24): selección de candidatos por clasificador ML en vez de la
         # heurística fija, con fallback obligatorio si no hay modelo/muestra todavía. En modo
@@ -613,7 +644,8 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
             try:
                 addr = token.get("contractAddress")
                 cached_report = security_cache.get(addr, _UNSET) if addr else _UNSET
-                data = research_token(token, run_id=run_id, security_report=cached_report)
+                data = research_token(token, run_id=run_id, security_report=cached_report,
+                                      market_stats=stats_cache.get(token.get("alphaId")))
                 data["market_regime"] = regime
                 pred_id = _save_entry(run_id, data)
                 _append_log(run_id, f"[{i}/{len(candidates)}] {symbol}: veredicto = {data.get('verdict')}")

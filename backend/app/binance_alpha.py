@@ -28,13 +28,15 @@ def get_alpha_token_list() -> list[dict]:
     return payload.get("data") or []
 
 
-def get_klines(alpha_id: str, interval: str = "1h", limit: int = 168) -> list[list]:
+def get_klines(alpha_id: str, interval: str = "1h", limit: int = 168, end_time_ms: int | None = None) -> list[list]:
     """
     Klines para un token Alpha. `alpha_id` debe incluir el sufijo de quote asset, ej.
     "ALPHA_175USDT" (el campo `alphaId` de get_alpha_token_list() sólo trae "ALPHA_175";
     los llamadores deben concatenar "USDT" — verificado empíricamente contra la API real).
     """
     params = {"symbol": alpha_id, "interval": interval, "limit": limit}
+    if end_time_ms is not None:  # verificado 2026-09-28: la API acepta endTime (velas hasta ese momento)
+        params["endTime"] = int(end_time_ms)
     resp = _session.get(BASE_URL + KLINES_PATH, params=params, timeout=20)
     resp.raise_for_status()
     payload = resp.json()

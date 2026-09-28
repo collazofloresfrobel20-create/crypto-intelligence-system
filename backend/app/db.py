@@ -203,6 +203,15 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN data_quality TEXT",
     "ALTER TABLE predictions ADD COLUMN data_completeness REAL",
     "ALTER TABLE predictions ADD COLUMN market_regime TEXT",
+    # Plan v2, B1 (2026-09-28): feature store de precio (klines 1h de los 7 dias previos),
+    # calculado al descubrir para analizados y control vivo -- 0 tokens de LLM.
+    "ALTER TABLE predictions ADD COLUMN vol_hourly_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN momentum_7d_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN max_drawdown_7d_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN dist_from_high_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN dist_from_low_pct REAL",
+    "ALTER TABLE predictions ADD COLUMN range_pos_7d REAL",
+    "ALTER TABLE predictions ADD COLUMN vol_trend_24h_vs_7d REAL",
 ]
 
 
