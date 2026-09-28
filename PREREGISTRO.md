@@ -48,3 +48,22 @@ resto por probabilidad de `sustained10` (`price_models.rank_by_price_model`).
   se cumpla.
 - Activar por un solo entrenamiento afortunado: el criterio debe cumplirse en al menos 2
   reentrenamientos semanales consecutivos.
+
+---
+
+# Adenda 2026-09-28: verdict_v2 (reglas explícitas del veredicto), Plan v2 C4
+
+Fijado antes de que exista un solo `verdict_v2` guardado. Los umbrales de `backend/app/verdict_v2.py`
+son hipótesis de partida y NO se ajustan mirando resultados; si hay que cambiarlos se crea `v2.1` con
+fecha y motivo, y se mide desde cero.
+
+Reglas (primera que aplique): sin fuente crítica o completitud < 0.5 -> Insufficient Evidence; riesgo >= 75
+o probabilidad de caída del modelo >= 0.6 -> Reject; oportunidad >= 70, riesgo <= 45, confidence limitado
+>= corte de Strong, earliness >= 50 y probabilidad de caída < 0.4 -> Strong Opportunity; oportunidad >= 55 y
+riesgo <= 60 -> Watchlist; el resto -> High Risk / Speculative.
+
+Compuerta para reemplazar al Juez LLM (todas): al menos 60 días en observación; al menos 150 tokens
+distintos analizados con resultado; comparación PAREADA sobre las mismas filas, por token, en la que el
+veredicto por reglas no sea peor que el del Juez en "cerró >= +10%" ni en "cayó >= 20%" (IC95 por token
+que no lo dé por peor en ninguna de las dos). Hasta entonces no cambia ningún veredicto mostrado ni
+enviado a Telegram.

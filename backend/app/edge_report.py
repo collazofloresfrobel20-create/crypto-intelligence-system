@@ -96,7 +96,7 @@ def _load_rows(stock_ids: set) -> list[dict]:
             SELECT run_id, category, symbol, alpha_id, verdict, created_at, max_return_pct,
                    return_pct, max_drawdown_pct, opportunity_score, confidence_score,
                    volume_24h, market_cap, data_completeness, market_regime, confidence_score_calibrated,
-                   premortem_risk
+                   premortem_risk, verdict_v2
             FROM predictions WHERE status = 'evaluated' AND max_return_pct IS NOT NULL
             """
         ).fetchall()]
@@ -163,6 +163,12 @@ def _score_context(analyzed: list[dict]) -> dict:
                                 "observed_rate": _r(sum(ys[i] for i in idx) / len(idx))})
             cal[name] = {"brier": _brier(ps, ys), "reliability": rel}
         out["calibration"][lab] = cal
+    v2rows = [r for r in analyzed if r.get("verdict_v2")]
+    out["by_verdict_v2"] = {v: _rates([r for r in v2rows if r["verdict_v2"] == v])
+                            for v in sorted({r["verdict_v2"] for r in v2rows})}
+    both = [r for r in v2rows if r.get("verdict")]
+    out["verdict_v2_agreement"] = ({"n": len(both), "agree_rate": _r(sum(1 for r in both if r["verdict"] == r["verdict_v2"]) / len(both))}
+                                   if both else {"n": 0})
     pre = [r for r in analyzed if r.get("premortem_risk") is not None]
     if len(pre) >= 30:
         out["premortem"] = {"n": len(pre), "n_tokens": len({r["token"] for r in pre}),

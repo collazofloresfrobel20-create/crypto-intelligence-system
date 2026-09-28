@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.db import get_conn
+from app.db import get_conn, init_db
 from app.market_stats import compute_market_stats, price_features, PRICE_FEATURE_COLUMNS
 
 COLS = list(PRICE_FEATURE_COLUMNS.keys())
@@ -30,6 +30,9 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--sleep", type=float, default=0.08)
     args = ap.parse_args()
+
+    if not args.dry_run:
+        init_db()  # migraciones aditivas: crea las columnas de features si aun no existen
 
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(

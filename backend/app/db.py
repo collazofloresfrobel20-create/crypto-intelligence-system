@@ -224,6 +224,8 @@ _MIGRATIONS = [
     # Plan v2, C3: pre-mortem adversarial ciego al Bull (Groq), solo shadow.
     "ALTER TABLE predictions ADD COLUMN premortem_risk INTEGER",
     "ALTER TABLE predictions ADD COLUMN premortem_failure_modes TEXT",
+    # Plan v2, C4: veredicto por reglas explicitas (verdict_v2.py), solo shadow.
+    "ALTER TABLE predictions ADD COLUMN verdict_v2 TEXT",
 ]
 
 

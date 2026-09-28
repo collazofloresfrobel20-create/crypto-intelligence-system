@@ -785,6 +785,7 @@ function renderPredictions(preds) {
       ${p.premortem_risk != null ? `<p class="muted" style="margin:2px 0 0;">Pre-mortem adversarial (Groq, en observación, no influye en el veredicto): riesgo de caída <strong>${p.premortem_risk}</strong>/100${Array.isArray(p.premortem_failure_modes) && p.premortem_failure_modes.length ? ". Causas señaladas: " + p.premortem_failure_modes.join("; ") : ""}.</p>` : ""}
       ${p.top10_holder_concentration_pct != null ? `<p class="muted" style="margin:2px 0 0;">Los top holders que reporta GoPlus controlan <strong>${p.top10_holder_concentration_pct}%</strong> del supply.</p>` : ""}
       ${goplusSignalsLine(p)}
+      ${p.verdict_v2 ? `<p class="muted" style="margin:2px 0 0;">Veredicto por reglas explícitas (en observación, no reemplaza al del Juez): <strong>${p.verdict_v2}</strong>.</p>` : ""}
       ${dataGapsLine(p)}
       ${movementContextBlock(p)}
       ${projectionBox(p)}
@@ -1260,6 +1261,8 @@ function renderEdge(snap) {
     </table></div>` : ''}
     ${freqTable("Qué pasó históricamente según el nivel de confianza del Juez", sc.by_confidence)}
     ${freqTable("Qué pasó históricamente según el veredicto", sc.by_verdict)}
+    ${sc.by_verdict_v2 && Object.keys(sc.by_verdict_v2).length ? freqTable("Qué pasó históricamente según el veredicto por reglas explícitas (en observación)", sc.by_verdict_v2) : ""}
+    ${sc.verdict_v2_agreement && sc.verdict_v2_agreement.n ? `<p class="muted" style="margin-top:6px;">Coincide con el veredicto del Juez en el ${Math.round(sc.verdict_v2_agreement.agree_rate * 100)}% de los casos (n=${sc.verdict_v2_agreement.n}). Para reemplazar al Juez se exigen al menos 60 días en observación y 150 tokens distintos.</p>` : ""}
     ${calHtml}
     ${dcHtml}
     ${pmHtml}

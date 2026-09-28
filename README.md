@@ -183,6 +183,27 @@ quedaba una línea en el log. Nada de esto cambia veredictos ni modelos; solo mi
   >= 10 controles, con menos el control es ruido), tres etiquetas (tocó +20% / cerró >= +10% / cayó
   >= 20%), IC95 remuestreando tokens, análisis de potencia y AUC del Juez frente a volumen/market cap.
 
+### 10. Plan v2 (2026-09-28): feature store de precio, modelos y contexto (todo en shadow)
+
+Motivo y evidencia completos en `PREREGISTRO.md` y en el historial de commits. Resumen:
+
+- **Higiene (B0):** los tokens muertos (volumen < `DEAD_VOLUME_FLOOR_USD` u offline) se re-registran como
+  máximo cada `DEAD_TOKEN_RETRACK_HOURS` (antes eran ~350 filas/día que nunca se podían evaluar), y si un token de
+  Binance no tiene klines se descarta ANTES de gastar las 11 llamadas de Gemini. DexScreener rinde ~15 filas/mes
+  porque sus feeds `token-boosts/latest` y `token-profiles/latest` traen 30 ítems globales con ~1-2 de BSC,
+  de poca liquidez: es cobertura, no un bug; no se invierte más ahí.
+- **Feature store (B1):** volatilidad horaria, momentum 7d, drawdown máximo, distancias a máx/mín y rango de los
+  7 días previos, guardados para analizados y control vivo (`market_stats.price_features`).
+  `scripts/backfill_price_features.py` las calcula para el historial (reanudable, `--dry-run`).
+- **Modelos de precio (B2):** `touch20`, `sustained10` y `drop20` (`price_models.py`), validación agrupada por token
+  y fuera de tiempo, probabilidades `pm_*` guardadas por fila. `PRICE_MODEL_MODE=active` (decisión humana) los usa para
+  elegir candidatos; el criterio para activarlo está prerregistrado en `PREREGISTRO.md`.
+- **Contexto de movimiento (B3) y de scores (B4):** bloque descriptivo calculado por código, sin zonas ni objetivos,
+  con frecuencias naturales, n e IC por token (`movement_context.py`, `edge_report.py`).
+- **Juez (C1-C4), sin tocar los modelos de Gemini:** techo de confidence por fuente crítica faltante
+  (`CONFIDENCE_CAP_MODE`), calibración medida (Brier y tabla de fiabilidad), pre-mortem ciego al Bull en Groq
+  (`premortem_risk`, solo observación) y `verdict_v2` por reglas explícitas (`verdict_v2.py`, solo observación).
+
 ## Acceso privado
 El dashboard entero (frontend + API) queda detrás de un login simple de usuario/contraseña — sin
 sesión válida, cualquier ruta redirige a `/login` (o devuelve 401 en API). Es un solo usuario fijo,

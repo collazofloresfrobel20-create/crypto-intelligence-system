@@ -3,7 +3,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring, market_regime, price_models, movement_context
+from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring, market_regime, price_models, movement_context, verdict_v2
 from .config import settings
 from .db import get_conn
 from .market_stats import compute_market_stats, price_features
@@ -266,6 +266,14 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
                                 f"({', '.join(data_quality['critical_missing'])}) -- se baja a 'Watchlist' (techo de confidence activo).")
         final_verdict = "Watchlist"
 
+    # Plan v2, C4: veredicto por reglas explicitas, en shadow (no cambia ningun veredicto real).
+    pm_scores = price_models.score_columns(token, price_features(market_stats))
+    v2 = verdict_v2.compute(
+        verdict.get("opportunity_score"), verdict.get("risk_score"), capped_conf,
+        verdict.get("earliness_score"), data_quality, pm_scores.get("pm_drop20"),
+        settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY,
+    )
+
     return {
         "category": "analyzed",
         "symbol": symbol,
@@ -316,7 +324,8 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
         "data_quality": json.dumps(data_quality, ensure_ascii=False),
         "data_completeness": data_quality["completeness"],
         **price_features(market_stats),
-        **price_models.score_columns(token, price_features(market_stats)),
+        **pm_scores,
+        "verdict_v2": v2,
         "movement_context": movement_context.build_json(price_features(market_stats)),
         **goplus.extract_security_features(security_report),
     }
@@ -388,9 +397,9 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 vol_hourly_pct, momentum_7d_pct, max_drawdown_7d_pct, dist_from_high_pct,
                 dist_from_low_pct, range_pos_7d, vol_trend_24h_vs_7d,
                 pm_touch20, pm_sustained10, pm_drop20, movement_context, confidence_score_capped,
-                premortem_risk, premortem_failure_modes,
+                premortem_risk, premortem_failure_modes, verdict_v2,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?, ?,?,?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?, ?,?,?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -417,7 +426,7 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data.get("vol_trend_24h_vs_7d"),
                 data.get("pm_touch20"), data.get("pm_sustained10"), data.get("pm_drop20"),
                 data.get("movement_context"), data.get("confidence_score_capped"),
-                data.get("premortem_risk"), data.get("premortem_failure_modes"),
+                data.get("premortem_risk"), data.get("premortem_failure_modes"), data.get("verdict_v2"),
                 _now(),
             ),
         )
