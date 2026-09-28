@@ -175,6 +175,16 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
     is_binance = token.get("source", "binance_alpha") == "binance_alpha"
 
     market_stats = compute_market_stats(alpha_id) if alpha_id else dexscreener.to_market_stats(token)
+    # B0 (2026-09-28): sin klines no hay forma de evaluar esta predicción contra precio real
+    # (31 análisis del historial quedaron 'unevaluable' tras gastar las 11 llamadas de Gemini).
+    # Se registra como descartado ANTES de gastar cuota. Solo aplica a Binance Alpha: las demás
+    # fuentes se evalúan por muestreo y no tienen klines por diseño.
+    if is_binance and alpha_id and market_stats.get("error"):
+        if run_id:
+            _append_log(run_id, f"  {symbol}: sin klines en Binance Alpha ({market_stats.get('error')}) -- "
+                                 "se salta el research de Gemini (no se podría evaluar después).")
+        return discarded_entry(token, [f"sin klines en Binance Alpha ({market_stats.get('error')}): no evaluable"])
+
     if security_report is _UNSET:
         security_report = goplus.get_token_security(token.get("chainName"), token.get("contractAddress"))
     if security_report is None and run_id:
@@ -391,6 +401,17 @@ def _recently_tracked_symbols(hours: int = 20) -> set[str]:
     return {r["symbol"] for r in rows}
 
 
+def is_dead_token(token: dict) -> bool:
+    """Token sin actividad real: volumen 24h bajo el piso o marcado offline/offsell/delisted en
+    Binance Alpha. Nunca llegará a ser candidato ni se podrá evaluar contra precio."""
+    if token.get("offline") or token.get("offsell") or token.get("fullyDelisted"):
+        return True
+    try:
+        return float(token.get("volume24h") or 0) < settings.DEAD_VOLUME_FLOOR_USD
+    except (TypeError, ValueError):
+        return True
+
+
 def _symbols_with_open_analysis() -> set[str]:
     """Símbolos que YA tienen un análisis profundo 'pending' sin resolver (categoría
     'analyzed'). Encontrado en producción: con la sola ventana de `_recently_tracked_symbols`
@@ -516,6 +537,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                     "Régimen de mercado (BTC): no disponible este ciclo (las filas quedan sin etiqueta de régimen).")
 
         already_tracked = _recently_tracked_symbols()
+        dead_recently_tracked = _recently_tracked_symbols(hours=settings.DEAD_TOKEN_RETRACK_HOURS)
         unevaluable_symbols = _permanently_unevaluable_symbols()
         open_analysis_symbols = _symbols_with_open_analysis()
 
@@ -527,8 +549,13 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         _append_log(run_id, f"Hard filters: {len(survivors)} sobreviven, {len(discarded)} descartados.")
 
         new_discarded = 0
+        skipped_dead = 0
         for token, reasons, margins in discarded:
             if token.get("symbol") in already_tracked:
+                continue
+            # B0 (2026-09-28): los tokens muertos ya se registraron esta semana -> no repetir a diario.
+            if is_dead_token(token) and token.get("symbol") in dead_recently_tracked:
+                skipped_dead += 1
                 continue
             try:
                 entry = discarded_entry(token, reasons, margins)
@@ -537,7 +564,8 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
                 new_discarded += 1
             except Exception:
                 pass
-        _append_log(run_id, f"Registrados {new_discarded} descartados nuevos para seguimiento (de {len(discarded)}).")
+        _append_log(run_id, f"Registrados {new_discarded} descartados nuevos para seguimiento (de {len(discarded)})."
+                    + (f" ({skipped_dead} tokens sin actividad ya registrados esta semana, no se repiten a diario.)" if skipped_dead else ""))
 
         excluded_symbols = unevaluable_symbols | open_analysis_symbols
         eligible_survivors = [t for t, _, _ in survivors if t.get("symbol") not in excluded_symbols]

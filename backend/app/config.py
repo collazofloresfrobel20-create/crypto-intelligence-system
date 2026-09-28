@@ -60,6 +60,14 @@ class Settings:
     MIN_HOLDERS = _int("MIN_HOLDERS", 200)
     MAX_LISTING_AGE_DAYS = _int("MAX_LISTING_AGE_DAYS", 120)
 
+    # --- Higiene de datos (Plan v2, B0, 2026-09-28) ---
+    # Medido: ~350 filas/día de control eran de ~360 tokens MUERTOS (mediana de volumen 24h de
+    # $596, 76% ya offline/delisted): nunca se pueden evaluar, inflan Turso y alargan el ciclo.
+    # Los tokens con volumen por debajo de este piso (o marcados offline) se re-registran como
+    # máximo una vez cada DEAD_TOKEN_RETRACK_HOURS en vez de a diario.
+    DEAD_VOLUME_FLOOR_USD = _float("DEAD_VOLUME_FLOOR_USD", 1_000)
+    DEAD_TOKEN_RETRACK_HOURS = _int("DEAD_TOKEN_RETRACK_HOURS", 168)
+
     # --- Pipeline ---
     MAX_CANDIDATES_PER_RUN = _int("MAX_CANDIDATES_PER_RUN", 15)
     PREDICTION_HORIZON_DAYS = _int("PREDICTION_HORIZON_DAYS", 7)
