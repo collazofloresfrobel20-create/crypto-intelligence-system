@@ -219,6 +219,8 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN pm_drop20 REAL",
     # Plan v2, B3: contexto de movimiento (JSON, calculado por codigo, sin LLM).
     "ALTER TABLE predictions ADD COLUMN movement_context TEXT",
+    # Plan v2, C1: confidence con techo por fuentes criticas faltantes (el crudo no se toca).
+    "ALTER TABLE predictions ADD COLUMN confidence_score_capped INTEGER",
 ]
 
 

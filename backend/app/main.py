@@ -229,6 +229,7 @@ def get_config():
         "MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY": settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY,
         "ML_SCORING_MODE": settings.ML_SCORING_MODE,
         "PRICE_MODEL_MODE": settings.PRICE_MODEL_MODE,
+        "CONFIDENCE_CAP_MODE": settings.CONFIDENCE_CAP_MODE,
         "MIN_SAMPLES_FOR_ML": settings.MIN_SAMPLES_FOR_ML,
         "ENSEMBLE_JUDGE_MODE": settings.ENSEMBLE_JUDGE_MODE,
         "groq_api_key_configured": bool(settings.GROQ_API_KEY),
@@ -256,6 +257,7 @@ class ConfigUpdateBody(BaseModel):
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: int | None = None
     ML_SCORING_MODE: str | None = None
     PRICE_MODEL_MODE: str | None = None
+    CONFIDENCE_CAP_MODE: str | None = None
     ENSEMBLE_JUDGE_MODE: str | None = None
     TELEGRAM_NOTIFY_VERDICTS: list[str] | None = None
 

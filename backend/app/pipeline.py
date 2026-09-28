@@ -251,6 +251,18 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
         elif run_id:
             _append_log(run_id, f"  [modo shadow] {msg} -- no se cambia el veredicto todavía.")
 
+    # Plan v2, C1: techo de confidence por fuentes criticas faltantes. El crudo no se modifica.
+    raw_conf = verdict.get("confidence_score")
+    capped_conf = raw_conf
+    if data_quality["critical_missing"] and raw_conf is not None:
+        capped_conf = min(raw_conf, settings.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY - 1)
+    if (getattr(settings, "CONFIDENCE_CAP_MODE", "shadow") == "active"
+            and data_quality["critical_missing"] and final_verdict == "Strong Opportunity"):
+        if run_id:
+            _append_log(run_id, f"  {symbol}: 'Strong Opportunity' con fuente critica faltante "
+                                f"({', '.join(data_quality['critical_missing'])}) -- se baja a 'Watchlist' (techo de confidence activo).")
+        final_verdict = "Watchlist"
+
     return {
         "category": "analyzed",
         "symbol": symbol,
@@ -279,6 +291,7 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
         "secondary_judge_earliness_score": verdict.get("secondary_judge_earliness_score"),
         "judge_agreement": verdict.get("judge_agreement"),
         "confidence_score_calibrated": ml_scoring.calibrate_confidence(verdict.get("confidence_score")),
+        "confidence_score_capped": capped_conf,
         "bull_case": bull.get("thesis"),
         "bear_case": bear.get("thesis"),
         "mediator_notes": mediator.get("surviving_conclusion"),
@@ -369,9 +382,9 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data_quality, data_completeness, market_regime,
                 vol_hourly_pct, momentum_7d_pct, max_drawdown_7d_pct, dist_from_high_pct,
                 dist_from_low_pct, range_pos_7d, vol_trend_24h_vs_7d,
-                pm_touch20, pm_sustained10, pm_drop20, movement_context,
+                pm_touch20, pm_sustained10, pm_drop20, movement_context, confidence_score_capped,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -397,7 +410,7 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data.get("dist_from_high_pct"), data.get("dist_from_low_pct"), data.get("range_pos_7d"),
                 data.get("vol_trend_24h_vs_7d"),
                 data.get("pm_touch20"), data.get("pm_sustained10"), data.get("pm_drop20"),
-                data.get("movement_context"),
+                data.get("movement_context"), data.get("confidence_score_capped"),
                 _now(),
             ),
         )

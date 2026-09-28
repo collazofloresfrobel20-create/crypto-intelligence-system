@@ -453,6 +453,21 @@
           </select>
         </label>
       </div>
+      <div class="section-title" style="margin-top:22px;">Techo de confidence por fuentes faltantes</div>
+      <p class="desc">
+        Si en un análisis no respondió una fuente crítica (klines de precio o GoPlus), el confidence no
+        puede llegar al corte de &laquo;Strong Opportunity&raquo;. En <strong>shadow</strong> (por defecto)
+        solo se guarda el confidence limitado y se avisa en la tarjeta; en <strong>active</strong>,
+        además, un &laquo;Strong Opportunity&raquo; con una fuente crítica faltante baja a &laquo;Watchlist&raquo;.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Modo
+          <select id="cfgCapMode">
+            <option value="shadow">Shadow (observar, no decide)</option>
+            <option value="active">Activo (baja el veredicto)</option>
+          </select>
+        </label>
+      </div>
       <div id="priceModelsBox" style="margin-top:14px;"><div class="empty-state">Aún no hay modelos de precio entrenados (falta el backfill de features o más ciclos).</div></div>
     </section>
 
@@ -769,6 +784,7 @@ function renderPredictions(preds) {
       </div>
       ${p.top10_holder_concentration_pct != null ? `<p class="muted" style="margin:2px 0 0;">Los top holders que reporta GoPlus controlan <strong>${p.top10_holder_concentration_pct}%</strong> del supply.</p>` : ""}
       ${goplusSignalsLine(p)}
+      ${dataGapsLine(p)}
       ${movementContextBlock(p)}
       ${projectionBox(p)}
       <div class="radar-row">
@@ -799,6 +815,17 @@ function renderPredictions(preds) {
       ` : `<div class="section-title">Estado</div><div class="text-block faint">Pendiente de evaluar (horizonte ${p.horizon_days} días)</div>`}
     </div>`;
   }).join("");
+}
+
+const SOURCE_LABEL = { market_klines: "klines de precio de Binance", security_goplus: "reporte de seguridad de GoPlus" };
+function dataGapsLine(p) {
+  // Plan v2, C1: aviso de texto cuando faltó una fuente critica en este analisis. Texto plano.
+  const dq = p.data_quality;
+  if (!dq || !Array.isArray(dq.critical_missing) || !dq.critical_missing.length) return "";
+  const names = dq.critical_missing.map(k => SOURCE_LABEL[k] || k).join(" y ");
+  const cap = p.confidence_score_capped != null && p.confidence_score_capped !== p.confidence_score
+    ? ` Con esa fuente faltante el confidence queda limitado a ${p.confidence_score_capped}.` : "";
+  return `<p class="muted" style="margin:6px 0 0;">Datos no disponibles en este análisis: <strong>${names}</strong>.${cap}</p>`;
 }
 
 function movementContextBlock(p) {
@@ -1375,6 +1402,7 @@ async function loadConfig() {
   $("cfgMinConfidence").value = cfg.MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY;
   $("cfgMlMode").value = cfg.ML_SCORING_MODE || "shadow";
   $("cfgPriceMode").value = cfg.PRICE_MODEL_MODE || "shadow";
+  $("cfgCapMode").value = cfg.CONFIDENCE_CAP_MODE || "shadow";
   $("cfgEnsembleMode").value = cfg.ENSEMBLE_JUDGE_MODE || "shadow";
   const verdictValues = cfg.VERDICT_VALUES || ["Strong Opportunity", "Watchlist", "High Risk / Speculative", "Reject", "Insufficient Evidence"];
   const notifyVerdicts = new Set(cfg.TELEGRAM_NOTIFY_VERDICTS || ["Strong Opportunity"]);
@@ -1485,6 +1513,7 @@ $("btnSaveConfig").onclick = async () => {
     MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: parseInt($("cfgMinConfidence").value),
     ML_SCORING_MODE: $("cfgMlMode").value,
     PRICE_MODEL_MODE: $("cfgPriceMode").value,
+    CONFIDENCE_CAP_MODE: $("cfgCapMode").value,
     ENSEMBLE_JUDGE_MODE: $("cfgEnsembleMode").value,
     TELEGRAM_NOTIFY_VERDICTS: Array.from(document.querySelectorAll(".cfgTelegramVerdict:checked")).map(el => el.value),
   };

@@ -48,6 +48,7 @@ _ADJUSTABLE_PARAMS = {
     # Fase 1 (2026-09-24): decisión humana, nunca tocada por diagnosis.py (auto-corrección).
     "ML_SCORING_MODE": _enum_caster({"shadow", "active"}),
     "PRICE_MODEL_MODE": _enum_caster({"shadow", "active"}),
+    "CONFIDENCE_CAP_MODE": _enum_caster({"shadow", "active"}),
     # Fase 2 (2026-09-24): idem -- decisión humana, nunca tocada por diagnosis.py.
     "ENSEMBLE_JUDGE_MODE": _enum_caster({"shadow", "active"}),
     # Fase 5 (2026-09-24): idem -- qué veredictos disparan Telegram, decisión humana.

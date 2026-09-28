@@ -96,6 +96,14 @@ class Settings:
     # desde el dashboard, informada por el criterio prerregistrado en PREREGISTRO.md.
     PRICE_MODEL_MODE = os.getenv("PRICE_MODEL_MODE", "shadow")
 
+    # --- Plan v2, C1 (2026-09-28): techo de confidence si falta una fuente critica ---
+    # Si klines o GoPlus no respondieron, el confidence no puede llegar al corte de
+    # "Strong Opportunity" (MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY - 1 es el techo: se reutiliza el
+    # corte que ya existe en vez de inventar un numero). "shadow" (por defecto): solo se guarda
+    # confidence_score_capped y se muestra el aviso; "active": ademas, un "Strong Opportunity" con
+    # una fuente critica faltante baja a "Watchlist". Decision humana desde el dashboard.
+    CONFIDENCE_CAP_MODE = os.getenv("CONFIDENCE_CAP_MODE", "shadow")
+
     # --- Fase 2 (2026-09-24): segunda opinión del Juez vía Groq (free tier permanente, sin
     # facturación requerida -- a diferencia del grounding de Gemini que dejó de ser gratis) ---
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
