@@ -1172,6 +1172,33 @@ function renderEdge(snap) {
   const baseRows = Object.entries(bl).map(([n, v]) => `
     <tr><td>${n}</td><td>${v.auc ?? "-"} <span class="muted">(${v.ci95[0] ?? "-"} a ${v.ci95[1] ?? "-"})</span></td></tr>`).join("");
   const pw = e.power;
+  const sc = e.score_context || {};
+  const rateCell = o => o && o.rate != null
+    ? `~${Math.round(o.rate * 100)}${o.ci95 && o.ci95[0] != null ? ` <span class="muted">(${Math.round(o.ci95[0] * 100)} a ${Math.round(o.ci95[1] * 100)})</span>` : ""}`
+    : "-";
+  const freqRows = grp => Object.entries(grp || {}).map(([k, v]) => `
+    <tr><td>${k}</td><td>${v.n_rows} <span class="muted">(${v.n_tokens} tokens)</span>${v.insufficient ? ' <span class="pill-inline">muestra insuficiente</span>' : ""}</td>
+    <td>${rateCell(v.touch20)}</td><td>${rateCell(v.sustained10)}</td><td>${rateCell(v.drop20)}</td></tr>`).join("");
+  const freqTable = (title, grp) => Object.keys(grp || {}).length ? `
+    <div class="section-title" style="margin-top:22px;">${title}</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Grupo</th><th>Observaciones</th><th>Tocaron +20% (de cada 100)</th><th>Cerraron en +10% o más</th><th>Cayeron 20% o más</th></tr></thead>
+      <tbody>${freqRows(grp)}</tbody>
+    </table></div>` : "";
+  const calRaw = ((sc.calibration || {}).touch20 || {})["confidence_score (crudo)"] || {};
+  const brier = calRaw.brier;
+  const relRows = (calRaw.reliability || []).map(b => `
+    <tr><td>${b.bin}</td><td>${b.n}</td><td>${(b.mean_predicted * 100).toFixed(0)}%</td><td>${(b.observed_rate * 100).toFixed(0)}%</td></tr>`).join("");
+  const calHtml = brier ? `
+    <div class="section-title" style="margin-top:22px;">Calibración del confidence_score (leído como probabilidad de tocar +20%)</div>
+    <p class="muted" style="max-width:70ch;">Brier ${brier.brier} frente a ${brier.brier_reference_constant} de simplemente predecir siempre la tasa base
+      (habilidad ${brier.skill}; menor a 0 significa que, leído como probabilidad, rinde peor que no tener modelo). n=${brier.n}.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Confidence (tramo)</th><th>N</th><th>Probabilidad que implica</th><th>Frecuencia real</th></tr></thead>
+      <tbody>${relRows}</tbody>
+    </table></div>` : "";
+  const dc = sc.data_completeness;
+  const dcHtml = dc ? `<p class="muted" style="margin-top:10px;max-width:70ch;">Completitud de datos vs. resultado: ${dc.note ? dc.note : `AUC ${dc.auc_vs_touch20} (tocó +20%) y ${dc.auc_vs_sustained10} (cerró en +10% o más), n=${dc.n}`}.</p>` : "";
   box.innerHTML = `
     <div class="numbers-row">
       ${numItem(e.matched.analyzed_tokens, "Tokens analizados comparables")}
@@ -1200,6 +1227,10 @@ function renderEdge(snap) {
       <thead><tr><th>Señal</th><th>AUC (IC 95%)</th></tr></thead>
       <tbody>${baseRows}</tbody>
     </table></div>` : ''}
+    ${freqTable("Qué pasó históricamente según el nivel de confianza del Juez", sc.by_confidence)}
+    ${freqTable("Qué pasó históricamente según el veredicto", sc.by_verdict)}
+    ${calHtml}
+    ${dcHtml}
     <p class="muted" style="margin-top:8px;">Calculado ${new Date(e.computed_at).toLocaleString()}. Acciones tokenizadas excluidas.</p>
   `;
 }

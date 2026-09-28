@@ -95,7 +95,7 @@ def _load_rows(stock_ids: set) -> list[dict]:
             """
             SELECT run_id, category, symbol, alpha_id, verdict, created_at, max_return_pct,
                    return_pct, max_drawdown_pct, opportunity_score, confidence_score,
-                   volume_24h, market_cap, data_completeness, market_regime
+                   volume_24h, market_cap, data_completeness, market_regime, confidence_score_calibrated
             FROM predictions WHERE status = 'evaluated' AND max_return_pct IS NOT NULL
             """
         ).fetchall()]
@@ -108,6 +108,66 @@ def _load_rows(stock_ids: set) -> list[dict]:
         r["sustained10"] = int(r["return_pct"] is not None and r["return_pct"] >= SUSTAINED_PCT)
         r["drop20"] = int(r["max_drawdown_pct"] is not None and r["max_drawdown_pct"] <= DROP_PCT)
         out.append(r)
+    return out
+
+
+MIN_SAMPLE_ROWS = 20          # mismo umbral que backtesting.MIN_SAMPLE_FOR_CONFIDENCE
+CONF_BUCKETS = [(0, 40), (40, 60), (60, 75), (75, 101)]
+RELIABILITY_BINS = [(0, 20), (20, 40), (40, 60), (60, 80), (80, 101)]
+
+
+def _rates(rows: list[dict]) -> dict:
+    """Tasa de cada desenlace con IC95 por token; sin IC si hay menos de 15 tokens distintos."""
+    tokens = {r["token"] for r in rows}
+    out = {"n_rows": len(rows), "n_tokens": len(tokens), "insufficient": len(rows) < MIN_SAMPLE_ROWS}
+    for lab in LABELS:
+        rate = _mean([r[lab] for r in rows]) if rows else None
+        lo = hi = None
+        if len(tokens) >= 15:
+            lo, hi = _cluster_ci(rows, lambda s, lab=lab: _mean([x[lab] for x in s]), iterations=300)
+        out[lab] = {"rate": _r(rate), "ci95": [_r(lo), _r(hi)]}
+    return out
+
+
+def _brier(ps: list[float], ys: list[int]) -> dict | None:
+    if len(ps) < 10:
+        return None
+    b = sum((p - y) ** 2 for p, y in zip(ps, ys)) / len(ps)
+    base = sum(ys) / len(ys)
+    b_ref = sum((base - y) ** 2 for y in ys) / len(ys)      # predecir siempre la tasa base
+    return {"brier": _r(b, 4), "brier_reference_constant": _r(b_ref, 4),
+            "skill": _r(1 - b / b_ref, 3) if b_ref > 0 else None, "n": len(ps)}
+
+
+def _score_context(analyzed: list[dict]) -> dict:
+    out = {"by_confidence": {}, "by_verdict": {}, "calibration": {}, "data_completeness": None}
+    for lo, hi in CONF_BUCKETS:
+        sub = [r for r in analyzed if r["confidence_score"] is not None and lo <= r["confidence_score"] < hi]
+        out["by_confidence"][f"{lo}-{min(hi, 100)}"] = _rates(sub)
+    for v in sorted({r["verdict"] for r in analyzed if r["verdict"]}):
+        out["by_verdict"][v] = _rates([r for r in analyzed if r["verdict"] == v])
+    for lab in ("touch20", "sustained10"):
+        cal = {}
+        for name, key, scale in (("confidence_score (crudo)", "confidence_score", 100.0),
+                                 ("confidence_score calibrado", "confidence_score_calibrated", 100.0)):
+            sub = [r for r in analyzed if r.get(key) is not None]
+            ps = [min(1.0, max(0.0, r[key] / scale)) for r in sub]
+            ys = [r[lab] for r in sub]
+            rel = []
+            for lo, hi in RELIABILITY_BINS:
+                idx = [i for i, p in enumerate(ps) if lo <= p * 100 < hi]
+                if idx:
+                    rel.append({"bin": f"{lo}-{min(hi, 100)}", "n": len(idx),
+                                "mean_predicted": _r(sum(ps[i] for i in idx) / len(idx)),
+                                "observed_rate": _r(sum(ys[i] for i in idx) / len(idx))})
+            cal[name] = {"brier": _brier(ps, ys), "reliability": rel}
+        out["calibration"][lab] = cal
+    comp = [r for r in analyzed if r.get("data_completeness") is not None]
+    if len(comp) >= 30:
+        out["data_completeness"] = {"n": len(comp), "auc_vs_touch20": _r(_auc([r["touch20"] for r in comp], [r["data_completeness"] for r in comp])),
+                                    "auc_vs_sustained10": _r(_auc([r["sustained10"] for r in comp], [r["data_completeness"] for r in comp]))}
+    else:
+        out["data_completeness"] = {"n": len(comp), "note": "muestra insuficiente (se necesitan >= 30 análisis evaluados con calidad de datos registrada)"}
     return out
 
 
@@ -208,6 +268,10 @@ def compute(universe: list[dict] | None = None) -> dict:
 
     completeness_rows = [r for r in analyzed if r["data_completeness"] is not None]
 
+    # Plan v2, B4/C2: contexto histórico de los scores (frecuencias naturales con n e IC por token)
+    # y calibración medida (Brier + tabla de fiabilidad) del confidence_score del Juez.
+    score_context = _score_context(analyzed)
+
     return {
         "computed_at": datetime.now(timezone.utc).isoformat(),
         "stocks_excluded": stocks_excluded,
@@ -219,6 +283,7 @@ def compute(universe: list[dict] | None = None) -> dict:
         "labels": labels_out, "power": power, "by_verdict": by_verdict,
         "weekly": weekly_out, "by_regime": regime_out, "baselines_auc": baselines,
         "data_completeness_rows_evaluated": len(completeness_rows),
+        "score_context": score_context,
     }
 
 
