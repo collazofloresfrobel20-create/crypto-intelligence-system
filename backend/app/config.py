@@ -95,6 +95,13 @@ class Settings:
     # automática ni tocada por el auto-corrector.
     ENSEMBLE_JUDGE_MODE = os.getenv("ENSEMBLE_JUDGE_MODE", "shadow")
 
+    # --- Jev / TypeSafe (PROPUESTA_JEV_CIS.md): sensor semántico en sombra, mejor esfuerzo.
+    # La key la pone el usuario en backend/.env (o como secret de GitHub); nunca en el repo.
+    TYPESAFE_API_KEY = os.getenv("TYPESAFE_API_KEY", "")
+    # Versión fijada a propósito, NO el alias "jev-latest": un alias que se mueve cambiaría las
+    # respuestas sin que cambie nuestro código.
+    JEV_MODEL = os.getenv("JEV_MODEL", "jev-1.13.0")
+
     # --- GoPlus (sin key requerida para uso básico) ---
     GOPLUS_APP_KEY = os.getenv("GOPLUS_APP_KEY", "")
     GOPLUS_APP_SECRET = os.getenv("GOPLUS_APP_SECRET", "")
