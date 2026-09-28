@@ -782,6 +782,7 @@ function renderPredictions(preds) {
         <div class="score-item"><div class="val">${p.confidence_score ?? "-"}</div><div class="lbl">Confidence</div>${p.confidence_score_calibrated != null ? `<div class="muted" style="font-size:9.5px;margin-top:1px;">calibrado: ${p.confidence_score_calibrated}</div>` : ""}</div>
         <div class="score-item"><div class="val">${p.earliness_score ?? "-"}</div><div class="lbl">Earliness</div></div>
       </div>
+      ${p.premortem_risk != null ? `<p class="muted" style="margin:2px 0 0;">Pre-mortem adversarial (Groq, en observación, no influye en el veredicto): riesgo de caída <strong>${p.premortem_risk}</strong>/100${Array.isArray(p.premortem_failure_modes) && p.premortem_failure_modes.length ? ". Causas señaladas: " + p.premortem_failure_modes.join("; ") : ""}.</p>` : ""}
       ${p.top10_holder_concentration_pct != null ? `<p class="muted" style="margin:2px 0 0;">Los top holders que reporta GoPlus controlan <strong>${p.top10_holder_concentration_pct}%</strong> del supply.</p>` : ""}
       ${goplusSignalsLine(p)}
       ${dataGapsLine(p)}
@@ -1225,6 +1226,8 @@ function renderEdge(snap) {
       <thead><tr><th>Confidence (tramo)</th><th>N</th><th>Probabilidad que implica</th><th>Frecuencia real</th></tr></thead>
       <tbody>${relRows}</tbody>
     </table></div>` : "";
+  const pm = sc.premortem;
+  const pmHtml = pm ? `<p class="muted" style="margin-top:6px;max-width:70ch;">Pre-mortem de Groq vs. resultado: ${pm.note ? pm.note : `AUC ${pm.auc_vs_drop20} contra caída de 20% o más y ${pm.auc_vs_touch20} contra tocar +20%, n=${pm.n} (${pm.n_tokens} tokens)`}.</p>` : "";
   const dc = sc.data_completeness;
   const dcHtml = dc ? `<p class="muted" style="margin-top:10px;max-width:70ch;">Completitud de datos vs. resultado: ${dc.note ? dc.note : `AUC ${dc.auc_vs_touch20} (tocó +20%) y ${dc.auc_vs_sustained10} (cerró en +10% o más), n=${dc.n}`}.</p>` : "";
   box.innerHTML = `
@@ -1259,6 +1262,7 @@ function renderEdge(snap) {
     ${freqTable("Qué pasó históricamente según el veredicto", sc.by_verdict)}
     ${calHtml}
     ${dcHtml}
+    ${pmHtml}
     <p class="muted" style="margin-top:8px;">Calculado ${new Date(e.computed_at).toLocaleString()}. Acciones tokenizadas excluidas.</p>
   `;
 }

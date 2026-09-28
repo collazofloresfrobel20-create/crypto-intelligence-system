@@ -95,7 +95,8 @@ def _load_rows(stock_ids: set) -> list[dict]:
             """
             SELECT run_id, category, symbol, alpha_id, verdict, created_at, max_return_pct,
                    return_pct, max_drawdown_pct, opportunity_score, confidence_score,
-                   volume_24h, market_cap, data_completeness, market_regime, confidence_score_calibrated
+                   volume_24h, market_cap, data_completeness, market_regime, confidence_score_calibrated,
+                   premortem_risk
             FROM predictions WHERE status = 'evaluated' AND max_return_pct IS NOT NULL
             """
         ).fetchall()]
@@ -162,6 +163,13 @@ def _score_context(analyzed: list[dict]) -> dict:
                                 "observed_rate": _r(sum(ys[i] for i in idx) / len(idx))})
             cal[name] = {"brier": _brier(ps, ys), "reliability": rel}
         out["calibration"][lab] = cal
+    pre = [r for r in analyzed if r.get("premortem_risk") is not None]
+    if len(pre) >= 30:
+        out["premortem"] = {"n": len(pre), "n_tokens": len({r["token"] for r in pre}),
+                            "auc_vs_drop20": _r(_auc([r["drop20"] for r in pre], [r["premortem_risk"] for r in pre])),
+                            "auc_vs_touch20": _r(_auc([r["touch20"] for r in pre], [r["premortem_risk"] for r in pre]))}
+    else:
+        out["premortem"] = {"n": len(pre), "note": "muestra insuficiente (se necesitan >= 30 análisis evaluados con pre-mortem; solo alimentará al Juez si su AUC contra la caída supera 0.5 con intervalo agrupado por token)"}
     comp = [r for r in analyzed if r.get("data_completeness") is not None]
     if len(comp) >= 30:
         out["data_completeness"] = {"n": len(comp), "auc_vs_touch20": _r(_auc([r["touch20"] for r in comp], [r["data_completeness"] for r in comp])),

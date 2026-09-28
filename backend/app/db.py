@@ -221,6 +221,9 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN movement_context TEXT",
     # Plan v2, C1: confidence con techo por fuentes criticas faltantes (el crudo no se toca).
     "ALTER TABLE predictions ADD COLUMN confidence_score_capped INTEGER",
+    # Plan v2, C3: pre-mortem adversarial ciego al Bull (Groq), solo shadow.
+    "ALTER TABLE predictions ADD COLUMN premortem_risk INTEGER",
+    "ALTER TABLE predictions ADD COLUMN premortem_failure_modes TEXT",
 ]
 
 
@@ -298,7 +301,7 @@ def row_to_dict(row) -> dict:
     d = dict(row)
     for key in ("key_evidence", "main_risks", "agent_findings", "rejection_reasons",
                 "patterns_found", "proposed_adjustments", "applied_adjustments",
-                "rejection_margins", "metrics", "data_quality", "market_regime", "payload", "movement_context"):
+                "rejection_margins", "metrics", "data_quality", "market_regime", "payload", "movement_context", "premortem_failure_modes"):
         if d.get(key):
             try:
                 d[key] = json.loads(d[key])

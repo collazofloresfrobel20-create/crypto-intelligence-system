@@ -8,7 +8,7 @@ from .config import settings
 from .db import get_conn
 from .market_stats import compute_market_stats, price_features
 from .agents.research import ALL_ANALYSTS
-from .agents.debate import bull_agent, bear_agent, mediator_agent, judge_agent
+from .agents.debate import bull_agent, bear_agent, mediator_agent, judge_agent, premortem_agent
 
 # Encontrado en producción (2026-09-23): un brote de 503 UNAVAILABLE ("alta demanda") de
 # Gemini hizo fallar los 15/15 candidatos de una corrida, cada uno tras ~10-14 min de
@@ -233,6 +233,9 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
         json.dumps(mediator, ensure_ascii=False),
     )
 
+    # Plan v2, C3: pre-mortem ciego al Bull (Groq), solo shadow: no toca el veredicto.
+    premortem = premortem_agent(symbol, findings_json)
+
     # Fase 2 (2026-09-24): decisión de ENSEMBLE_JUDGE_MODE, separada de judge_agent() (que se
     # queda "puro" -- solo llama LLMs). El desacuerdo entre Gemini y Groq solo importa cuando
     # Gemini dijo "Strong Opportunity"; en cualquier otro veredicto no hay nada que degradar.
@@ -292,6 +295,8 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
         "judge_agreement": verdict.get("judge_agreement"),
         "confidence_score_calibrated": ml_scoring.calibrate_confidence(verdict.get("confidence_score")),
         "confidence_score_capped": capped_conf,
+        "premortem_risk": premortem["premortem_risk"] if premortem else None,
+        "premortem_failure_modes": json.dumps(premortem["failure_modes"], ensure_ascii=False) if premortem else None,
         "bull_case": bull.get("thesis"),
         "bear_case": bear.get("thesis"),
         "mediator_notes": mediator.get("surviving_conclusion"),
@@ -383,8 +388,9 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 vol_hourly_pct, momentum_7d_pct, max_drawdown_7d_pct, dist_from_high_pct,
                 dist_from_low_pct, range_pos_7d, vol_trend_24h_vs_7d,
                 pm_touch20, pm_sustained10, pm_drop20, movement_context, confidence_score_capped,
+                premortem_risk, premortem_failure_modes,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?, ?,?,?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -411,6 +417,7 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data.get("vol_trend_24h_vs_7d"),
                 data.get("pm_touch20"), data.get("pm_sustained10"), data.get("pm_drop20"),
                 data.get("movement_context"), data.get("confidence_score_capped"),
+                data.get("premortem_risk"), data.get("premortem_failure_modes"),
                 _now(),
             ),
         )

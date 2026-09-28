@@ -89,6 +89,40 @@ def _groq_second_opinion(token_symbol: str, findings_json: str, bull_json: str, 
         return None
 
 
+_PREMORTEM_KEYS = ["premortem_risk", "failure_modes"]
+
+
+def premortem_agent(token_symbol: str, findings_json: str) -> dict | None:
+    """Plan v2, C3 (2026-09-28): pre-mortem adversarial en Groq, CIEGO al Bull Case (recibe solo los
+    hallazgos crudos de los analistas): 'asume que este token ya cayó 20% o más, ¿por qué?'. Corre en
+    Groq (cuota aparte de Gemini, costo ~$0) y en SHADOW: se guarda y se mide si predice el resultado
+    real (caída >= 20%); NO alimenta al Juez hasta que demuestre poder predictivo (ver el plan).
+    Best-effort como _groq_second_opinion: si falla, devuelve None y el ciclo sigue igual."""
+    try:
+        result = groq_client.generate_json(
+            model=settings.GROQ_MODEL,
+            system_instruction=(
+                f"Eres un analista adversarial que hace un pre-mortem del token {token_symbol}. "
+                "Supón que 7 días después de este análisis el precio YA cayó 20% o más. Usando SOLO "
+                "los hallazgos de los analistas que se te dan (no inventes datos, no uses conocimiento "
+                "externo), explica las causas más probables de esa caída. Devuelve: 'failure_modes' "
+                "(lista de 2 a 4 causas concretas, una frase cada una, ancladas en los hallazgos) y "
+                "'premortem_risk' (entero 0-100: qué tan plausible es esa caída dados los hallazgos; "
+                "100 = casi seguro). Si los hallazgos son escasos, dilo en una de las causas en vez de "
+                "inventar. Responde siempre en español."
+            ),
+            prompt=f"Hallazgos de los analistas (JSON):\n{findings_json}",
+            required_keys=_PREMORTEM_KEYS,
+        )
+        risk = int(float(result.get("premortem_risk")))
+        modes = result.get("failure_modes")
+        if not isinstance(modes, list):
+            modes = [str(modes)]
+        return {"premortem_risk": max(0, min(100, risk)), "failure_modes": [str(m) for m in modes][:4]}
+    except Exception:
+        return None
+
+
 def judge_agent(
     token_symbol: str,
     findings_json: str,
