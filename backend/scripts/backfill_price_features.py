@@ -44,7 +44,7 @@ def main():
         rows = rows[: args.limit]
     print(f"{len(rows)} filas sin features de precio{' (dry-run: no se escribe)' if args.dry_run else ''}.")
 
-    done = skipped = 0
+    done = skipped = write_failed = 0
     t0 = time.time()
     for i, r in enumerate(rows, start=1):
         end_ms = int(datetime.fromisoformat(r["created_at"]).timestamp() * 1000)
@@ -54,18 +54,33 @@ def main():
         else:
             done += 1
             if not args.dry_run:
-                with get_conn() as conn:
-                    conn.execute(
-                        f"UPDATE predictions SET {', '.join(c + ' = ?' for c in COLS)} "
-                        "WHERE id = ? AND vol_hourly_pct IS NULL",
-                        [feats[c] for c in COLS] + [r["id"]],
-                    )
+                # Encontrado en producción (2026-09-28): una conexión de Turso creada por fila,
+                # miles de veces seguidas, eventualmente agota sockets/semáforos de Windows y
+                # aiohttp lanza ClientConnectorError -- transitorio, no un problema de datos. 3
+                # reintentos con backoff corto; si de plano no se puede escribir, se deja NULL (el
+                # script es reanudable, la próxima corrida la vuelve a intentar) en vez de tirar
+                # abajo las horas de trabajo ya hechas en las filas anteriores.
+                for attempt in range(3):
+                    try:
+                        with get_conn() as conn:
+                            conn.execute(
+                                f"UPDATE predictions SET {', '.join(c + ' = ?' for c in COLS)} "
+                                "WHERE id = ? AND vol_hourly_pct IS NULL",
+                                [feats[c] for c in COLS] + [r["id"]],
+                            )
+                        break
+                    except Exception as e:
+                        if attempt == 2:
+                            write_failed += 1
+                            print(f"  aviso: no se pudo escribir id {r['id']} tras 3 intentos ({e}); queda NULL para la próxima corrida.")
+                        else:
+                            time.sleep(2 * (attempt + 1))
             if args.dry_run and done <= 3:
                 print("  ejemplo id", r["id"], {k: v for k, v in feats.items()})
         if i % 100 == 0:
-            print(f"  [{i}/{len(rows)}] con features: {done}, sin klines suficientes: {skipped}, {time.time() - t0:.0f}s")
+            print(f"  [{i}/{len(rows)}] con features: {done}, sin klines suficientes: {skipped}, fallos de escritura: {write_failed}, {time.time() - t0:.0f}s")
         time.sleep(args.sleep)
-    print(f"Listo: {done} con features, {skipped} sin klines suficientes (quedan NULL), {time.time() - t0:.0f}s.")
+    print(f"Listo: {done} con features, {skipped} sin klines suficientes (quedan NULL), {write_failed} fallos de escritura (quedan NULL, reintentables), {time.time() - t0:.0f}s.")
 
 
 if __name__ == "__main__":
