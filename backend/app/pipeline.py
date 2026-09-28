@@ -3,7 +3,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring, market_regime, price_models
+from . import binance_alpha, dexscreener, goplus, filters, notifications, ml_scoring, market_regime, price_models, movement_context
 from .config import settings
 from .db import get_conn
 from .market_stats import compute_market_stats, price_features
@@ -299,6 +299,7 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
         "data_completeness": data_quality["completeness"],
         **price_features(market_stats),
         **price_models.score_columns(token, price_features(market_stats)),
+        "movement_context": movement_context.build_json(price_features(market_stats)),
         **goplus.extract_security_features(security_report),
     }
 
@@ -368,9 +369,9 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data_quality, data_completeness, market_regime,
                 vol_hourly_pct, momentum_7d_pct, max_drawdown_7d_pct, dist_from_high_pct,
                 dist_from_low_pct, range_pos_7d, vol_trend_24h_vs_7d,
-                pm_touch20, pm_sustained10, pm_drop20,
+                pm_touch20, pm_sustained10, pm_drop20, movement_context,
                 created_at, status
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?, 'pending')
+            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?, ?, 'pending')
             """,
             (
                 run_id, data["category"], data["symbol"], data["name"], data["alpha_id"],
@@ -396,6 +397,7 @@ def _save_entry(run_id: str, data: dict) -> int | None:
                 data.get("dist_from_high_pct"), data.get("dist_from_low_pct"), data.get("range_pos_7d"),
                 data.get("vol_trend_24h_vs_7d"),
                 data.get("pm_touch20"), data.get("pm_sustained10"), data.get("pm_drop20"),
+                data.get("movement_context"),
                 _now(),
             ),
         )
@@ -543,6 +545,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
     """
     run_id = existing_run_id or create_run("update")
     price_models.reset_cache()
+    movement_context.reset_cache()
     try:
         _append_log(run_id, "Descargando universo de tokens de Binance Alpha...")
         universe = binance_alpha.get_alpha_token_list()

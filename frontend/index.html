@@ -769,6 +769,7 @@ function renderPredictions(preds) {
       </div>
       ${p.top10_holder_concentration_pct != null ? `<p class="muted" style="margin:2px 0 0;">Los top holders que reporta GoPlus controlan <strong>${p.top10_holder_concentration_pct}%</strong> del supply.</p>` : ""}
       ${goplusSignalsLine(p)}
+      ${movementContextBlock(p)}
       ${projectionBox(p)}
       <div class="radar-row">
         ${radarSvg(p)}
@@ -798,6 +799,16 @@ function renderPredictions(preds) {
       ` : `<div class="section-title">Estado</div><div class="text-block faint">Pendiente de evaluar (horizonte ${p.horizon_days} días)</div>`}
     </div>`;
   }).join("");
+}
+
+function movementContextBlock(p) {
+  // Plan v2, B3: contexto de movimiento calculado por código (sin LLM). Descriptivo, sin niveles de
+  // precio ni objetivos; texto plano, sin color.
+  const mc = p.movement_context;
+  if (!mc || !Array.isArray(mc.text)) return "";
+  return `<div class="section-title" style="margin-top:14px;">Contexto de movimiento (7 días previos)</div>
+    ${mc.text.map(t => `<p class="muted" style="margin:2px 0;max-width:80ch;">${t}</p>`).join("")}
+    <p class="muted" style="margin:4px 0 0;font-size:11px;max-width:80ch;">${mc.disclaimer || ""}</p>`;
 }
 
 const DISCARDED_STATUS_LABEL = { pending: "Pendiente", evaluated: "Evaluado", unevaluable: "Sin datos" };

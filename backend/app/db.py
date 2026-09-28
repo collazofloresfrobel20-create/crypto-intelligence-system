@@ -217,6 +217,8 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN pm_touch20 REAL",
     "ALTER TABLE predictions ADD COLUMN pm_sustained10 REAL",
     "ALTER TABLE predictions ADD COLUMN pm_drop20 REAL",
+    # Plan v2, B3: contexto de movimiento (JSON, calculado por codigo, sin LLM).
+    "ALTER TABLE predictions ADD COLUMN movement_context TEXT",
 ]
 
 
@@ -294,7 +296,7 @@ def row_to_dict(row) -> dict:
     d = dict(row)
     for key in ("key_evidence", "main_risks", "agent_findings", "rejection_reasons",
                 "patterns_found", "proposed_adjustments", "applied_adjustments",
-                "rejection_margins", "metrics", "data_quality", "market_regime", "payload"):
+                "rejection_margins", "metrics", "data_quality", "market_regime", "payload", "movement_context"):
         if d.get(key):
             try:
                 d[key] = json.loads(d[key])
