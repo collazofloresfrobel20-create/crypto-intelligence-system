@@ -522,6 +522,22 @@
 <script>
 const $ = (id) => document.getElementById(id);
 
+// Todo el dashboard pinta con innerHTML, y nombres de tokens y textos de la IA vienen de
+// fuentes externas: un token llamado "<img onerror=...>" ejecutaba código con tu sesión.
+// Se escapan TODOS los textos al entrar, en un solo lugar, para que ninguna plantilla se olvide.
+// Excepción: 'log' es JSON que se parsea aquí y se muestra con textContent (ya es seguro).
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+function escDeep(v, key) {
+  if (typeof v === "string") return key === "log" ? v : esc(v);
+  if (Array.isArray(v)) return v.map((x) => escDeep(x));
+  if (v && typeof v === "object") {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) out[k] = escDeep(x, k);
+    return out;
+  }
+  return v;
+}
+
 async function api(path, opts) {
   const res = await fetch(path, opts);
   if (res.status === 401) {
@@ -532,7 +548,7 @@ async function api(path, opts) {
     const body = await res.text();
     throw new Error(`${res.status}: ${body}`);
   }
-  return res.json();
+  return escDeep(await res.json());
 }
 
 $("btnLogout").onclick = async () => {

@@ -8,6 +8,7 @@ from .config import settings
 from .db import get_conn
 from .market_stats import compute_market_stats, price_features
 from .agents.research import ALL_ANALYSTS
+from .agents import debate as debate_mod
 from .agents.debate import bull_agent, bear_agent, mediator_agent, judge_agent, premortem_agent
 
 # Encontrado en producción (2026-09-23): un brote de 503 UNAVAILABLE ("alta demanda") de
@@ -18,6 +19,9 @@ from .agents.debate import bull_agent, bear_agent, mediator_agent, judge_agent, 
 # temporal de Gemini, no candidatos malos uno tras otro -- mejor parar pronto y dejar que
 # el proximo ciclo automatico lo intente de nuevo.
 CONSECUTIVE_FAILURES_TO_ABORT = 3
+
+# Mínimo de analistas (de 7) que deben responder para que corran debate y juez.
+MIN_ANALYSTS_OK = 5
 
 # Sentinel (Fase 4, 2026-09-24): distingue "el caller no pasó security_report, research_token
 # debe consultarlo por su cuenta" de "el caller SÍ lo consultó en lote y vino None (GoPlus
@@ -39,7 +43,15 @@ def _append_log(run_id: str, message: str):
 
 def create_run(kind: str = "update") -> str:
     run_id = uuid.uuid4().hex[:12]
+    # Si GitHub Actions mata el job (timeout de 90 min) la fila se queda en 'running' para
+    # siempre y el dashboard bloquea el botón. Ningún ciclo dura 2h: se cierran como error.
+    stale_cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     with get_conn() as conn:
+        conn.execute(
+            "UPDATE pipeline_runs SET status = 'error', finished_at = ? "
+            "WHERE status = 'running' AND started_at < ?",
+            (_now(), stale_cutoff),
+        )
         conn.execute(
             "INSERT INTO pipeline_runs (id, kind, started_at, status, log) VALUES (?, ?, ?, 'running', '[]')",
             (run_id, kind, _now()),
@@ -55,7 +67,7 @@ def _finish_run(run_id: str, status: str):
         )
 
 
-def get_holder_history(symbol: str, limit: int = 8) -> list[dict]:
+def get_holder_history(symbol: str, limit: int = 8, contract_address: str | None = None) -> list[dict]:
     """
     Historial propio de snapshots (analyzed + discarded) de ciclos anteriores para este
     símbolo. Reemplaza la necesidad de un explorer on-chain de pago (Etherscan excluye BSC de
@@ -64,15 +76,18 @@ def get_holder_history(symbol: str, limit: int = 8) -> list[dict]:
     evolución de holders/liquidez, usamos lo que el propio sistema ya fotografía en cada
     actualización. Con el auto-update corriendo, esto se vuelve cada vez más útil con el tiempo.
     """
+    # Las `limit` fotos MÁS RECIENTES (antes ASC: daba las más viejas, de septiembre), del mismo
+    # contrato si se conoce (un símbolo puede tener clones con otro contrato), en orden cronológico.
+    key_sql, key = ("contract_address = ?", contract_address) if contract_address else ("symbol = ?", symbol)
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT created_at, holders, price_at_prediction, market_cap, liquidity, volume_24h
-            FROM predictions WHERE symbol = ? ORDER BY created_at ASC LIMIT ?
+            FROM predictions WHERE {key_sql} ORDER BY created_at DESC LIMIT ?
             """,
-            (symbol, limit),
+            (key, limit),
         ).fetchall()
-    return [dict(r) for r in rows]
+    return [dict(r) for r in reversed(rows)]
 
 
 def holder_concentration_pct(security_report: dict | None) -> float | None:
@@ -208,7 +223,7 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
                  "esta fuente no trae holders en el universo inicial)"],
             )
 
-    holder_history = get_holder_history(symbol)
+    holder_history = get_holder_history(symbol, contract_address=token.get("contractAddress"))
     data_quality = assess_data_quality(token, market_stats, security_report, holder_history)
 
     context = build_context(token, market_stats, security_report, holder_history)
@@ -219,6 +234,15 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
             findings[role] = fn(context)
         except Exception as e:
             findings[role] = {"error": str(e)}
+
+    # Sin analistas no hay análisis: antes el juez emitía veredicto sobre puros errores (323
+    # de 537 filas basura). Se aborta sin guardar ni bloquear el símbolo; el mensaje conserva
+    # el error original para que el ciclo detecte "cuota diaria" y se detenga.
+    errors = [f["error"] for f in findings.values() if "error" in f]
+    ok_count = len(findings) - len(errors)
+    if ok_count < MIN_ANALYSTS_OK:
+        raise RuntimeError(f"solo {ok_count}/{len(findings)} analistas respondieron; "
+                           f"no se emite veredicto. Primer error: {errors[0]}")
 
     findings_json = json.dumps(findings, ensure_ascii=False)
 
@@ -235,6 +259,8 @@ def research_token(token: dict, run_id: str | None = None, security_report=_UNSE
 
     # Plan v2, C3: pre-mortem ciego al Bull (Groq), solo shadow: no toca el veredicto.
     premortem = premortem_agent(symbol, findings_json)
+    if premortem is None and run_id:
+        _append_log(run_id, f"  aviso: Groq sin resultado para {symbol} ({debate_mod.last_groq_error}).")
 
     # Fase 2 (2026-09-24): decisión de ENSEMBLE_JUDGE_MODE, separada de judge_agent() (que se
     # queda "puro" -- solo llama LLMs). El desacuerdo entre Gemini y Groq solo importa cuando
@@ -551,8 +577,7 @@ def _batch_fetch_security(tokens: list[dict], run_id: str | None = None) -> dict
             continue
         cache[addr] = goplus.get_token_security(token.get("chainName"), addr)
         fetched += 1
-        if fetched % 5 == 0:
-            time.sleep(1)
+        time.sleep(1.5)  # sin pausa por llamada GoPlus responde 4029 tras ~11 llamadas seguidas
     if run_id:
         hits = sum(1 for v in cache.values() if v is not None)
         _append_log(run_id, f"GoPlus en lote (Fase 4): {hits}/{len(cache)} sobrevivientes con reporte de seguridad.")
@@ -576,6 +601,7 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
     price_models.reset_cache()
     movement_context.reset_cache()
     try:
+        _append_log(run_id, f"Groq (pre-mortem y segundo juez): {'llave configurada' if settings.GROQ_API_KEY else 'SIN llave GROQ_API_KEY, no correrá'}.")
         _append_log(run_id, "Descargando universo de tokens de Binance Alpha...")
         universe = binance_alpha.get_alpha_token_list()
         _append_log(run_id, f"Binance Alpha: {len(universe)} tokens.")
@@ -734,14 +760,9 @@ def run_update_cycle(existing_run_id: str | None = None) -> str:
         marked = backtesting.update_current_marks()
         _append_log(run_id, f"{marked} entradas pendientes actualizadas con su precio/retorno actual (mark-to-market).")
 
-        if evaluated > 0:
-            from . import diagnosis
-            try:
-                diag = diagnosis.generate_diagnosis(run_id)
-                if diag:
-                    _append_log(run_id, "Diagnóstico de auto-corrección generado.")
-            except Exception as e:
-                _append_log(run_id, f"No se pudo generar diagnóstico: {e}")
+        # Auto-corrección por IA apagada (Plan v3, D3): en 23 diagnósticos propuso aflojar filtros
+        # 50 veces y endurecer 0, mirando solo el máximo de los descartados. Los cambios de
+        # filtros pasan a ser manuales y prerregistrados. diagnosis.py se conserva sin llamarse.
 
         # Fase A (2026-09-28): panel "Edge vs control" precalculado para el dashboard.
         try:

@@ -106,13 +106,18 @@ def get_token_security(chain_name: str, contract_address: str) -> dict | None:
             resp = _session.get(url, params=params, headers=headers, timeout=15)
             resp.raise_for_status()
             payload = resp.json()
+            # GoPlus responde HTTP 200 aun con límite de tasa (code 4029): antes eso se tomaba
+            # como "sin datos" y dejaba sin reporte al 70% de los tokens. code 1 = OK.
+            if payload.get("code") != 1:
+                raise RuntimeError(f"GoPlus code {payload.get('code')}: {payload.get('message')}")
             result = payload.get("result") or {}
             # La respuesta indexa por dirección en minúsculas.
             data = result.get(contract_address.lower()) or (list(result.values())[0] if result else None)
             return data
-        except Exception:
+        except Exception as e:
             if attempt < MAX_RETRIES - 1:
-                time.sleep(2 * (attempt + 1))
+                # El límite de GoPlus es por ventana de tiempo: unos segundos no bastan.
+                time.sleep((20 if "4029" in str(e) else 2) * (attempt + 1))
     return None
 
 
@@ -127,11 +132,10 @@ def extract_security_features(security_report: dict | None) -> dict:
     defensiva. Cada campo es None-seguro: si no viene, o no se puede interpretar, queda en None.
 
       EVM (chain_id numérico, ej. BSC): creator_percent/owner_percent son strings numéricos
-      (fracción 0-1, se multiplican por 100); is_honeypot/is_mintable son strings "0"/"1". NO
-      hay un array 'lp_holders' separado -- confirmado con CAKE en BSC: el locking de supply,
-      cuando existe, aparece como is_locked=1 dentro del array 'holders' normal (ej. la
-      dirección quemada 0x...dead con is_locked=1). lp_holders_locked_pct se calcula sumando
-      el 'percent' de los holders con is_locked=1.
+      (fracción 0-1, se multiplican por 100); is_honeypot/is_mintable son strings "0"/"1".
+      'lp_holders' existe cuando el token tiene pool en DEX (CAKE no lo trae; tokens BSC
+      pequeños sí, verificado 2026-11-20); lp_holders_locked_pct suma su 'percent' con
+      is_locked=1.
 
       Solana: NO hay creator_percent/owner_percent/is_honeypot -- en su lugar hay 'creators'
       (lista, puede venir vacía) y 'mintable'/'freezable' como objetos {authority, status}
@@ -181,13 +185,16 @@ def extract_security_features(security_report: dict | None) -> dict:
     raw_mintable = security_report.get("is_mintable")
     is_mintable = int(raw_mintable == "1") if raw_mintable is not None else None
 
-    holders = security_report.get("holders")
+    # % de la LIQUIDEZ bloqueada: viene de 'lp_holders' (verificado 2026-11-20 con tokens BSC
+    # reales: sí existe en EVM cuando hay pool en DEX; antes se sumaban los 'holders' del token,
+    # que es supply bloqueado, otra cosa). Sin 'lp_holders' queda None (desconocido), no 0.
+    lp_holders = security_report.get("lp_holders")
     lp_locked_pct = None
-    if isinstance(holders, list) and holders:
+    if isinstance(lp_holders, list) and lp_holders:
         try:
             locked = sum(
-                (_num(h.get("percent")) or 0) for h in holders
-                if isinstance(h, dict) and h.get("is_locked") == 1
+                (_num(h.get("percent")) or 0) for h in lp_holders
+                if isinstance(h, dict) and str(h.get("is_locked")) == "1"
             )
             lp_locked_pct = round(locked * 100, 2)
         except (TypeError, AttributeError):

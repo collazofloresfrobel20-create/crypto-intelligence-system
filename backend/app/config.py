@@ -18,7 +18,7 @@ def _int(name: str, default: int) -> int:
 
 class Settings:
     # --- Gemini ---
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
     # Cuota diaria gratuita confirmada en producción: 20 llamadas/día POR PROYECTO de Google
     # Cloud (no por key — varias keys del mismo proyecto comparten la misma cuota). El cuello
     # de botella real es el modelo "smart" (4 llamadas/token: bull/bear/mediador/juez) — con
@@ -106,7 +106,7 @@ class Settings:
 
     # --- Fase 2 (2026-09-24): segunda opinión del Juez vía Groq (free tier permanente, sin
     # facturación requerida -- a diferencia del grounding de Gemini que dejó de ser gratis) ---
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()  # un salto de línea en el secret rompe el header HTTP
     # Confirmar el nombre exacto contra https://console.groq.com/docs/models al desplegar --
     # los modelos gratuitos de Groq rotan con cierta frecuencia, más que los de Gemini.
     GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
@@ -131,7 +131,7 @@ class Settings:
 
     # --- Acceso privado (usuario/contraseña únicos, sin cuentas múltiples) ---
     AUTH_USERNAME = os.getenv("AUTH_USERNAME", "PAI")
-    AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "TUPU777")
+    AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "")  # sin default: la contraseña vive solo en .env
     LOGIN_MAX_ATTEMPTS = _int("LOGIN_MAX_ATTEMPTS", 5)
     LOGIN_LOCKOUT_MINUTES = _int("LOGIN_LOCKOUT_MINUTES", 15)
 

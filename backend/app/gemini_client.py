@@ -27,7 +27,11 @@ from .db import get_conn
 _clients: dict[str, genai.Client] = {}
 _lock = threading.Lock()
 _last_call_ts: list[float] = []
-_exhausted_keys: set[str] = set()  # keys que ya agotaron su cuota diaria en esta corrida
+# (key, modelo) que ya agotaron su cuota diaria en esta corrida. La cuota es por proyecto Y
+# por modelo: antes se marcaba solo la key, así que cuando flash agotaba la key principal,
+# flash-lite (que comparte esa key) quedaba sin pool y los 7 analistas fallaban (323 de 537
+# análisis basura hasta 2026-11-20).
+_exhausted_keys: set[tuple[str, str]] = set()
 
 
 def _get_client(api_key: str) -> genai.Client:
@@ -43,9 +47,10 @@ def _key_pool(model: str) -> list[str]:
             "Falta GEMINI_API_KEY en backend/.env. Consigue una key gratuita en "
             "https://aistudio.google.com/apikey"
         )
+    # Cada proyecto trae cuota propia para CADA modelo, así que el pool completo sirve para
+    # ambos (antes flash-lite solo usaba la key principal: 20 llamadas/día para 7 analistas).
     pool = [settings.GEMINI_API_KEY]
-    if model == settings.GEMINI_MODEL_SMART:
-        pool += [k for k in settings.GEMINI_SMART_API_KEYS if k not in pool]
+    pool += [k for k in settings.GEMINI_SMART_API_KEYS if k not in pool]
     return pool
 
 
@@ -97,7 +102,7 @@ def generate_json(
 ) -> dict:
     """Llama a Gemini pidiendo salida JSON validada contra response_schema. Rota de API key
     automáticamente si la cuota diaria de la key actual se agota (ver GEMINI_SMART_API_KEYS)."""
-    pool = [k for k in _key_pool(model) if k not in _exhausted_keys]
+    pool = [k for k in _key_pool(model) if (k, model) not in _exhausted_keys]
     if not pool:
         raise RuntimeError(
             f"Todas las API keys disponibles agotaron su cuota diaria para '{model}'. "
@@ -149,7 +154,7 @@ def generate_json(
                 if _is_daily_quota_error(e):
                     # Esta key ya no sirve por hoy: márcala y pasa a la siguiente del pool
                     # (si hay). No tiene caso reintentar la misma key.
-                    _exhausted_keys.add(key)
+                    _exhausted_keys.add((key, model))
                     break
                 msg = str(e).lower()
                 if "429" in msg or "rate" in msg or "resource_exhausted" in msg:

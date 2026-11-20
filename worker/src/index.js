@@ -28,6 +28,27 @@ const ADJUSTABLE_PARAMS = {
   TELEGRAM_NOTIFY_VERDICTS: "multienum:" + VERDICT_VALUES.join(","),
 };
 
+// Rangos válidos (validación del lado del servidor: el diagnóstico del LLM o un error de dedo
+// podían guardar cualquier número, y "50,000" se leía como 50).
+const PARAM_RANGES = {
+  MIN_LIQUIDITY_USD: [1000, 1e7],
+  MIN_VOLUME_24H_USD: [1000, 1e8],
+  MAX_MARKET_CAP_USD: [1e5, 1e11],
+  MIN_HOLDERS: [0, 1e6],
+  MAX_LISTING_AGE_DAYS: [1, 3650],
+  MAX_CANDIDATES_PER_RUN: [1, 30],
+  MIN_CONFIDENCE_FOR_STRONG_OPPORTUNITY: [0, 100],
+};
+
+// Solo los filtros duros se pueden aplicar desde un diagnóstico; modos y cupos, nunca.
+const DIAGNOSIS_PARAMS = ["MIN_LIQUIDITY_USD", "MIN_VOLUME_24H_USD", "MAX_MARKET_CAP_USD", "MIN_HOLDERS", "MAX_LISTING_AGE_DAYS"];
+
+// "$50,000" -> 50000. Sufijos como "50k" dan NaN y se rechazan (antes se leían como 50).
+function parseNumber(raw) {
+  const s = String(raw).trim().replace(/[$,_\s]/g, "");
+  return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : NaN;
+}
+
 async function saveDynamicConfig(db, updates) {
   const applied = {};
   const now = new Date().toISOString();
@@ -35,9 +56,12 @@ async function saveDynamicConfig(db, updates) {
     const kind = ADJUSTABLE_PARAMS[key];
     if (!kind || rawValue === null || rawValue === undefined) continue;
     let value;
-    if (kind === "int") value = parseInt(rawValue, 10);
-    else if (kind === "float") value = parseFloat(rawValue);
-    else if (kind.startsWith("enum:")) {
+    if (kind === "int" || kind === "float") {
+      value = parseNumber(rawValue);
+      if (kind === "int" && !Number.isInteger(value)) continue;
+      const [lo, hi] = PARAM_RANGES[key] || [-Infinity, Infinity];
+      if (Number.isNaN(value) || value < lo || value > hi) continue;
+    } else if (kind.startsWith("enum:")) {
       const valid = kind.slice("enum:".length).split(",");
       value = String(rawValue);
       if (!valid.includes(value)) continue;
@@ -67,8 +91,29 @@ async function getConfigOverrides(db) {
   return overrides;
 }
 
+// connect-src 'self' impide que un script inyectado mande datos a otro servidor; los scripts
+// inline siguen permitidos porque el dashboard actual es un solo HTML (el v2 los separará).
+const SECURITY_HEADERS = {
+  "Content-Security-Policy":
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; " +
+    "frame-ancestors 'none'; form-action 'self'",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "X-Frame-Options": "DENY",
+};
+
 export default {
   async fetch(request, env, ctx) {
+    const res = await route(request, env, ctx);
+    const out = new Response(res.body, res); // copia: las respuestas de ASSETS/redirect son inmutables
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
+    return out;
+  },
+};
+
+async function route(request, env, ctx) {
+  {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -108,8 +153,8 @@ export default {
 
     // Dashboard estático (index.html, etc.)
     return env.ASSETS.fetch(request);
-  },
-};
+  }
+}
 
 async function handleLogin(request, env) {
   const body = await request.json().catch(() => ({}));
@@ -220,18 +265,22 @@ async function handleApi(path, request, env) {
 
     const updates = {};
     for (const adj of proposed) {
-      if (!(adj.parameter in ADJUSTABLE_PARAMS)) continue;
+      if (!DIAGNOSIS_PARAMS.includes(adj.parameter)) continue;
       if (acceptedParams && !acceptedParams.includes(adj.parameter)) continue;
       updates[adj.parameter] = adj.proposed_value;
     }
     const appliedValues = await saveDynamicConfig(db, updates);
     const applied = Object.entries(appliedValues).map(([parameter, new_value]) => ({ parameter, new_value }));
+    const rejected = Object.keys(updates).filter((k) => !(k in appliedValues));
+    if (!applied.length) {
+      return json({ applied, rejected, message: "ningún valor propuesto era válido (fuera de rango o ilegible); no se cambió nada" }, 400);
+    }
 
     await db.run("UPDATE diagnoses SET status = 'applied', applied_adjustments = ? WHERE id = ?", [
       JSON.stringify(applied),
       diagId,
     ]);
-    return json({ applied });
+    return json({ applied, rejected });
   }
 
   const rollbackMatch = path.match(/^\/api\/diagnoses\/(\d+)\/rollback$/);
@@ -264,12 +313,12 @@ async function handleApi(path, request, env) {
         failed.push({ parameter: param, reason: "no se encontró el valor original en este diagnóstico" });
         continue;
       }
-      const cleaned = String(rawOriginal).replace(/[^\d.\-]/g, "");
-      if (!cleaned || cleaned === "-" || cleaned === "." || cleaned === "-.") {
+      const restored = parseNumber(rawOriginal);
+      if (Number.isNaN(restored)) {
         failed.push({ parameter: param, reason: `no se pudo interpretar '${rawOriginal}' como número` });
         continue;
       }
-      updates[param] = cleaned;
+      updates[param] = restored;
     }
 
     const appliedValues = Object.keys(updates).length ? await saveDynamicConfig(db, updates) : {};

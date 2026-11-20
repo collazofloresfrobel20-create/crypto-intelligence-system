@@ -26,6 +26,8 @@ def _hash(value: str) -> str:
 
 
 def verify_credentials(username: str, password: str) -> bool:
+    if not settings.AUTH_PASSWORD:  # sin contraseña configurada nadie entra (ni con contraseña vacía)
+        return False
     user_ok = hmac.compare_digest(username.strip(), settings.AUTH_USERNAME)
     pass_ok = hmac.compare_digest(_hash(password), _hash(settings.AUTH_PASSWORD))
     return user_ok and pass_ok

@@ -10,6 +10,20 @@ _JSON_RULE = "Responde siempre en español. Devuelve solo el JSON pedido, sin te
 # Fase 2 (2026-09-24): lo mínimo que le pedimos a Groq para poder comparar su veredicto contra
 # el de Gemini -- no le pedimos el resto del JUDGE_SCHEMA (bull_case_summary, key_evidence,
 # etc.), eso ya lo tiene Gemini y no aporta nada tener una segunda versión de la misma prosa.
+# Último error de Groq (antes se tragaba en silencio: 0 llamadas en 2 meses sin ningún rastro).
+# pipeline.py lo escribe en el log de la corrida.
+last_groq_error: str | None = None
+
+
+def _record_groq_error(where: str, e: Exception) -> None:
+    global last_groq_error
+    msg = str(e)
+    if settings.GROQ_API_KEY:
+        msg = msg.replace(settings.GROQ_API_KEY, "***")  # el error de header puede traer la llave
+    last_groq_error = f"{where}: {type(e).__name__}: {msg[:200]}"
+    print(f"[groq] {last_groq_error}", flush=True)
+
+
 _GROQ_JUDGE_KEYS = ["opportunity_score", "risk_score", "confidence_score", "earliness_score", "verdict"]
 
 
@@ -85,7 +99,8 @@ def _groq_second_opinion(token_symbol: str, findings_json: str, bull_json: str, 
             ),
             required_keys=_GROQ_JUDGE_KEYS,
         )
-    except Exception:
+    except Exception as e:
+        _record_groq_error("segundo juez", e)
         return None
 
 
@@ -119,7 +134,8 @@ def premortem_agent(token_symbol: str, findings_json: str) -> dict | None:
         if not isinstance(modes, list):
             modes = [str(modes)]
         return {"premortem_risk": max(0, min(100, risk)), "failure_modes": [str(m) for m in modes][:4]}
-    except Exception:
+    except Exception as e:
+        _record_groq_error("pre-mortem", e)
         return None
 
 

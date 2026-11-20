@@ -75,8 +75,8 @@ ya queda corriendo solo cada 12h en cuanto el código esté en el repo.
    y actualizo `worker/wrangler.toml` con el ID real que devuelva.
 3. **(TÚ o YO, tú das los valores)** Configuro los secretos del Worker:
    ```bash
-   wrangler secret put AUTH_USERNAME        # PAI
-   wrangler secret put AUTH_PASSWORD        # TUPU777
+   wrangler secret put AUTH_USERNAME        # (tu usuario)
+   wrangler secret put AUTH_PASSWORD        # (tu contraseña; nunca la escribas en este archivo)
    wrangler secret put TURSO_DATABASE_URL
    wrangler secret put TURSO_AUTH_TOKEN
    wrangler secret put GITHUB_PAT           # el token del paso 2.4
