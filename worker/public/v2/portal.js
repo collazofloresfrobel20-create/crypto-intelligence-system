@@ -28,7 +28,7 @@ async function detail(row, supplied = null) {
   if (shadowRun && row.shadow_arm === "ranked") why = "Investigado por su posición en la heurística de volumen y movimiento de precio.";
   append(panel,"p",row.source === "consulta_manual" ? "Investigado a solicitud del usuario." : why);
 
-  panel.focus();
+  panel.focus(); panel.scrollIntoView({block:"start"});
   append(panel,"h3","Mercado observado");
   append(panel,"p","Precio " + usd(row.price) + " · Liquidez " + usd(row.liquidity) + " · Volumen 24 h " + usd(row.volume_24h));
   if (!row.has_dossier) { append(panel,"p","El contrato quedó registrado en el universo de comparación. Esta observación carece de expediente."); return; }
@@ -69,7 +69,7 @@ async function load() {
     if (seq !== sequence) return;
     el("status").textContent = data.rows.length ? "Observaciones más recientes · Página " + (page+1) : "Sin observaciones para esta búsqueda.";
     for (const row of data.rows) {
-      const b = append(el("results"),"button","","row");
+      const b = append(el("results"),"button","","research-row");
       append(b,"strong",row.symbol || "Sin símbolo"); append(b,"span",row.has_dossier ? "Ver expediente" : "Ver observación");
       append(b,"small",row.token_key); b.onclick = () => detail(row);
     }

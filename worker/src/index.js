@@ -119,7 +119,10 @@ async function route(request, env, ctx) {
     const path = url.pathname;
 
     // ---------- Rutas públicas (login) ----------
-    if (path === "/login" || path.startsWith("/login-assets")) {
+    if (/^\/login-assets\/(cis\.css|token(-small)?\.png|manrope-latin\.woff2|BarlowSemiCondensed-SemiBold\.ttf)$/.test(path)) {
+      return env.ASSETS.fetch(new Request(new URL(path.replace("/login-assets/","/v2/assets/"),request.url),request));
+    }
+    if (path === "/login") {
       return env.ASSETS.fetch(request);
     }
     if (path === "/api/auth/login" && request.method === "POST") {
@@ -136,6 +139,7 @@ async function route(request, env, ctx) {
       return Response.redirect(new URL("/login", request.url), 302);
     }
 
+    if (path === "/") return Response.redirect(new URL("/v2/",request.url),302);
     if (path === "/api/auth/logout" && request.method === "POST") {
       const token = auth.getSessionToken(request);
       await auth.destroySession(env, token);
@@ -215,7 +219,10 @@ async function handleApi(path, request, env) {
     const category = url.searchParams.get("category") || "analyzed";
     const runId = url.searchParams.get("run_id");
     const limit = parseInt(url.searchParams.get("limit") || "200", 10);
-    let sql = "SELECT * FROM predictions WHERE category = ?";
+    const compact = url.searchParams.get("compact") === "1";
+    const cols = compact ? (category === "discarded" ? "id,symbol,status,created_at,max_return_pct,rejection_margins,rejection_reasons" :
+      "id,symbol,name,source,status,created_at,verdict,project_explainer,opportunity_score,risk_score,confidence_score,earliness_score,confidence_score_calibrated,confidence_score_capped,price_at_prediction,price_after,current_price,current_return_pct,return_pct,return_at_day1_pct,return_at_day3_pct,max_drawdown_pct,max_return_pct,horizon_days,volatility_pct,secondary_judge_verdict,judge_agreement,key_evidence,main_risks,system_note,bull_case,bear_case,top10_holder_concentration_pct,creator_percent,owner_percent,lp_holders_locked_pct,is_honeypot,is_mintable,premortem_failure_modes,premortem_risk,movement_context,data_quality,mediator_contradictions_count,thesis_result") : "*";
+    let sql = "SELECT "+cols+" FROM predictions WHERE category = ?";
     const args = [category];
     if (runId) {
       sql += " AND run_id = ?";

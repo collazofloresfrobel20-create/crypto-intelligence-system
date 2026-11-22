@@ -1,7 +1,266 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CIS · Mesa de investigación</title><link rel="stylesheet" href="/v2/portal.css"></head><body>
-<aside><a class="brand" href="/v2/"><img src="/v2/token-small.png" alt="">CIS.</a><nav><a aria-current="page" href="#lista">Expedientes</a><a href="/">Historial y operaciones ↗</a></nav></aside>
-<main><header><span>Crypto Intelligence System</span><span>Investigación personal</span></header><h1>Mesa de investigación</h1>
-<section id="lista"><div class="filters"><label>Cadena<select id="chain"><option value="">Todas</option><option value="bsc">BNB Smart Chain</option><option value="solana">Solana</option></select></label><label>Buscar<input id="query" type="search" placeholder="Símbolo o contrato" maxlength="120"></label></div>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIS V2 · Crypto Intelligence System</title>
+<link rel="icon" href="assets/token-small.png">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/cis.css">
+<link rel="stylesheet" href="assets/graficas.css">
+</head>
+<body>
+<a class="skip" href="#contenido">Ir al contenido</a>
+<aside class="rail" id="rail"><a class="brand" href="#resumen" aria-label="CIS, ir a Resumen"><img src="assets/token-small.png" alt=""><span>CIS<span class="brand-dot">.</span></span></a>
+<nav aria-label="Navegación principal" class="side-nav"><div class="nav-label">Investigación</div><a href="#resumen" class="tab-btn active" data-view="resumen"><i data-icon="grid"></i><span>Resumen</span></a><a href="#ranking" class="tab-btn" data-view="ranking"><i data-icon="rank"></i><span>Ranking</span></a><a href="#oportunidades" class="tab-btn" data-view="oportunidades"><i data-icon="scan"></i><span>Candidatos</span></a><a href="#descartados" class="tab-btn" data-view="descartados"><i data-icon="filter"></i><span>Descartados</span></a><a href="#historial" class="tab-btn" data-view="historial"><i data-icon="history"></i><span>Historial</span></a><a href="#expedientes" class="tab-btn" data-view="expedientes"><i data-icon="layers"></i><span>Expedientes</span></a><div class="nav-label second">Sistema</div><a href="#autocorreccion" class="tab-btn" data-view="autocorreccion"><i data-icon="pulse"></i><span>Evaluación</span></a><a href="#metodologia" class="tab-btn" data-view="metodologia"><i data-icon="nodes"></i><span>Metodología</span></a><a href="#configuracion" class="tab-btn" data-view="configuracion"><i data-icon="sliders"></i><span>Configuración</span></a></nav>
+<div class="rail-footer"><span class="rail-caption">Crypto Intelligence System</span><a href="/login" id="btnLogout"><i data-icon="exit"></i> Cerrar sesión</a></div></aside>
+<button class="veil" aria-label="Cerrar menú" hidden></button>
+<div class="shell"><header class="top"><div><button type="button" id="menu" class="menu" aria-expanded="false" aria-controls="rail" aria-label="Abrir menú"><i data-icon="menu"></i></button><span class="topGroup">Investigación</span><span class="slash">/</span><b id="currentView">Resumen</b></div><span class="sample"><i></i>Portal privado</span></header>
+<main id="contenido" tabindex="-1"><section class="view active" id="view-resumen" aria-label="Resumen">
+<div class="hero"><div class="hero-copy"><div class="hero-source"><span class="source-icon"></span>CIS · Investigación de mercado</div><h1>Radar de tokens<span>.</span></h1><p>Explora los candidatos del motor operativo y contrasta su tesis con los expedientes por contrato.</p><a class="primary" href="#ranking">Explorar ranking <i data-icon="upRight"></i></a></div><div class="hero-visual" aria-hidden="true"><div class="mesh"></div><div class="orbit one"></div><div class="orbit two"></div><div class="orbit three"></div><img class="hero-coin" src="assets/token.png" alt=""></div></div>
+<div class="metric-strip" id="overviewMetrics"></div>
+<div class="overview-grid"><section class="panel map-panel" aria-labelledby="mapTitle"><div class="panel-head"><div><span class="kicker">Candidatos activos</span><h2 id="mapTitle">Mapa de oportunidad</h2></div><i class="quiet-icon" data-icon="scan"></i></div><div id="opportunityMap"></div></section><section class="panel"><div class="panel-head"><div><span class="kicker">Análisis</span><h2>Veredictos</h2></div><i class="quiet-icon" data-icon="donut"></i></div><div id="overviewVerdicts"></div></section></div>
+<section class="panel"><div class="panel-head"><div><span class="kicker">Investigación</span><h2>Candidatos activos</h2></div><a class="all-link" href="#ranking" aria-label="Ver ranking completo"><i data-icon="arrow"></i></a></div><p id="selectionNote"></p><div id="overviewPicks"></div></section>
+<div class="cycle"><div class="cycle-title"><i data-icon="pulse"></i><div><strong>Última actualización</strong><span id="lastRunStat"></span></div></div><button type="button" class="light-button" id="btnUpdate"><i data-icon="refresh"></i>Recargar datos</button><button class="light-button" type="button" id="runCycle">Iniciar ciclo de análisis</button><span id="runStatus" role="status"></span></div></section>
+  <!-- RANKING -->
+  <section class="view" id="view-ranking">
+    <section class="block">
+      <h2>Ranking de candidatos</h2>
+      <p class="desc">Puntuaciones de los últimos 200 análisis del motor operativo. Abre un candidato para revisar sus riesgos y la evidencia disponible.</p>
+      <div class="section-title">Estado</div>
+      <div class="row" id="statusFilters" style="margin-bottom:10px;"></div>
+      <div class="section-title">Veredicto</div>
+      <div class="row" id="verdictFilters"></div>
+      <div id="scoreComparison" class="chart-section"></div>
+      <div id="rankingTable" style="margin-top:20px;"></div>
+    </section>
+  </section>
+
+  <!-- OPORTUNIDADES -->
+  <section class="view" id="view-oportunidades">
+    <section class="block">
+      <h2>Candidatos analizados</h2>
+      <p class="desc">Tesis, evidencia y riesgos de los tokens incluidos en el filtro del ranking.</p>
+      <div id="predictions" class="cards"><div class="empty-state">Aún no hay predicciones. Ejecuta una actualización desde Resumen.</div></div>
+    </section>
+  </section>
+
+  <!-- METODOLOGÍA -->
+  <section class="view" id="view-metodologia">
+    <section class="block">
+      <h2>Cómo piensa el sistema</h2>
+      <p class="desc">El motor operativo emite los veredictos históricos. La captura en sombra compara candidatos con alternativas de su cadena y conserva cada expediente para su revisión independiente.</p>
+      <div id="pipelineDiagram"></div>
+    </section>
+  </section>
+
+  <!-- DESCARTADOS -->
+  <section class="view" id="view-descartados">
+    <section class="block">
+      <h2>Descartados por filtros</h2>
+      <p class="desc">Motivos de descarte y seguimiento posterior de cada token.</p>
+      <div id="discardedTable"><div class="empty-state">Sin datos todavía.</div></div>
+    </section>
+  </section>
+
+  <!-- HISTORIAL -->
+  <section class="view" id="view-historial">
+    <section class="block">
+      <h2>Seguimiento de la selección en sombra</h2>
+<label>Horizonte <select id="cohortDays"><option value="7">7 días</option><option value="30">30 días</option><option value="90">90 días</option><option value="180">180 días</option></select></label>
+<div id="shadowCohorts" aria-live="polite">Cargando seguimiento…</div></section><section class="block"><h2>Historial del motor operativo</h2>
+      <p class="desc">Resultados al cierre del horizonte y precisión por veredicto.</p>
+      <div id="outcomeChart" class="chart-section"></div>
+      <div id="historyBox"><div class="empty-state">Sin datos todavía.</div></div>
+    </section>
+  </section>
+
+  <!-- AUTO-CORRECCIÓN -->
+  <section class="view" id="view-autocorreccion"><p class="desc">Evaluación del motor operativo. Los ajustes se revisan y se aplican manualmente.</p>
+    <section class="block">
+      <h2>Precisión por nivel de confianza</h2>
+      <p class="desc">Compara la confianza del juez con los resultados que ya se pudieron evaluar.</p>
+      <div class="row" style="margin-bottom:6px;">
+        <button class="btn secondary small" id="btnStats">Refrescar</button>
+      </div>
+      <div id="statsBox"></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Eficacia de los filtros</h2>
+      <p class="desc">Compara lo analizado (pasó los filtros) contra lo descartado, para saber si los umbrales están bien calibrados.</p>
+      <div id="efficacyBox"></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Edge contra el control</h2>
+      <p class="desc">Compara lo que el sistema eligió contra los tokens descartados <strong>del mismo ciclo</strong> (mismas condiciones de mercado). Sin este emparejado, un mercado alcista hace parecer bueno a cualquier método. Se muestran tres formas de medir el resultado porque &laquo;tocó +20%&raquo; también premia a los tokens muy volátiles, que igual suben que se desploman.</p>
+      <div id="edgeBox"><div class="empty-state">Se calcula al final de cada actualización.</div></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Auto-corrección</h2>
+      <p class="desc">Diagnóstico automático generado tras cada actualización con evaluaciones nuevas.</p>
+      <div id="diagnosisBox"><div class="empty-state">Aún no hay diagnósticos.</div></div>
+    </section>
+  </section>
+
+  <!-- CONFIGURACIÓN -->
+  <section class="view" id="view-configuracion">
+    <section class="block">
+      <h2>Filtros duros</h2>
+      <p class="desc">Umbrales usados en cada actualización para separar candidatos de descartados.</p>
+      <div class="form-grid" id="configForm">
+        <label class="cfg">Liquidez mínima (USD)<input type="number" id="cfgMinLiquidity"></label>
+        <label class="cfg">Volumen 24h mínimo (USD)<input type="number" id="cfgMinVolume"></label>
+        <label class="cfg">Market cap máximo (USD)<input type="number" id="cfgMaxMcap"></label>
+        <label class="cfg">Holders mínimos<input type="number" id="cfgMinHolders"></label>
+        <label class="cfg">Antigüedad máxima de listado (días)<input type="number" id="cfgMaxAge"></label>
+        <label class="cfg">Candidatos por actualización<input type="number" id="cfgMaxCandidates"></label>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button class="btn" id="btnSaveConfig">Guardar cambios</button>
+        <span id="configStatus" class="muted"></span>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Umbral del Juez</h2>
+      <p class="desc">
+        Antes vivía fijo en el prompt del Juez (sin forma de ajustarlo de verdad, aunque la
+        auto-corrección "proponía" cambiarlo). Por debajo de este confidence_score, el veredicto
+        NO puede ser "Strong Opportunity" &mdash; sí puede seguir siendo "Watchlist" o cualquier
+        otro. Bajarlo no garantiza más oportunidades reales, solo permite que confidence bajo ya
+        no las bloquee automáticamente.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Confidence mínimo para "Strong Opportunity"<input type="number" id="cfgMinConfidence"></label>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Clasificador ML (selección de candidatos)</h2>
+      <p class="desc">
+        En vez de un umbral fijo, un modelo entrenado con el propio historial evaluado del
+        sistema puede rankear qué candidatos investigar a fondo. En modo <strong>shadow</strong>
+        (por defecto) el modelo NO decide nada todavía -- solo se loguea en cada ciclo qué
+        habría elegido, para comparar contra la selección real. Activarlo a
+        <strong>active</strong> es una decisión que deberías tomar solo después de revisar el
+        benchmark de abajo (precisión/recall del modelo contra el ranking heurístico actual
+        sobre el mismo conjunto de prueba), no antes.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Modo
+          <select id="cfgMlMode">
+            <option value="shadow">Shadow (observar, no decide)</option>
+            <option value="active">Activo (decide la selección real)</option>
+          </select>
+        </label>
+      </div>
+      <div id="mlBenchmarkBox" style="margin-top:14px;"><div class="empty-state">Aún no hay ningún modelo entrenado (hace falta más historial evaluado).</div></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Modelos de precio (selección por volatilidad y momentum)</h2>
+      <p class="desc">
+        Tres modelos entrenados con datos de precio gratuitos (sin LLM) sobre todos los tokens con
+        resultado, no solo los pocos analizados. En modo <strong>shadow</strong> (por defecto) solo se
+        calcula su probabilidad en cada token y se compara; <strong>active</strong> elige los candidatos
+        excluyendo el cuartil de mayor riesgo de caída y ordenando por éxito sostenido. Los criterios para
+        activarlo se fijaron de antemano (PREREGISTRO.md); activarlo es decisión tuya, nunca automática.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Modo
+          <select id="cfgPriceMode">
+            <option value="shadow">Shadow (observar, no decide)</option>
+            <option value="active">Activo (decide la selección real)</option>
+          </select>
+        </label>
+      </div>
+      <div class="section-title" style="margin-top:22px;">Techo de confidence por fuentes faltantes</div>
+      <p class="desc">
+        Si en un análisis no respondió una fuente crítica (klines de precio o GoPlus), el confidence no
+        puede llegar al corte de &laquo;Strong Opportunity&raquo;. En <strong>shadow</strong> (por defecto)
+        solo se guarda el confidence limitado y se avisa en la tarjeta; en <strong>active</strong>,
+        además, un &laquo;Strong Opportunity&raquo; con una fuente crítica faltante baja a &laquo;Watchlist&raquo;.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Modo
+          <select id="cfgCapMode">
+            <option value="shadow">Shadow (observar, no decide)</option>
+            <option value="active">Activo (baja el veredicto)</option>
+          </select>
+        </label>
+      </div>
+      <div id="priceModelsBox" style="margin-top:14px;"><div class="empty-state">Aún no hay modelos de precio entrenados (falta el backfill de features o más ciclos).</div></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Segunda opinión del Juez (Groq)</h2>
+      <p class="desc">
+        Además de Gemini, cada veredicto se contrasta con una segunda opinión independiente
+        (Groq/Llama). En modo <strong>shadow</strong> (por defecto) se guarda si coinciden o
+        no, pero el veredicto final sigue siendo el de Gemini sin tocar -- primero hace falta
+        acumular suficiente historial para saber si el desacuerdo de verdad predice peor
+        resultado real. En modo <strong>active</strong>, si Gemini dice "Strong Opportunity" y
+        Groq no coincide, el veredicto final baja a "Insufficient Evidence". Si Groq no está
+        disponible (sin key, caído, etc.) el ciclo sigue normal con solo el veredicto de
+        Gemini -- nunca se bloquea por un tercero.
+      </p>
+      <div class="form-grid">
+        <label class="cfg">Modo
+          <select id="cfgEnsembleMode">
+            <option value="shadow">Shadow (observar, no decide)</option>
+            <option value="active">Activo (puede degradar el veredicto)</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Alertas por Telegram</h2>
+      <p class="desc">
+        Qué veredictos disparan un mensaje de Telegram (si están configurados
+        TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID). Por defecto solo "Strong Opportunity". Cada
+        predicción solo notifica una vez -- ampliar esto no genera avisos repetidos del mismo
+        símbolo mientras su análisis siga abierto.
+      </p>
+      <div id="cfgTelegramVerdicts" class="form-grid"></div>
+    </section>
+
+    <hr class="rule">
+
+    <section class="block">
+      <h2>Sistema</h2>
+      <div class="table-wrap">
+        <table><tbody id="modelInfo"></tbody></table>
+      </div>
+    </section>
+  </section>
+
+<section class="view" id="view-expedientes"><section class="block"><h2>Expedientes por contrato</h2><p class="desc">Capturas en sombra de BNB Smart Chain y Solana. Consulta los motivos de selección, la cobertura documental y los escenarios pendientes.</p><section id="lista"><div class="filters"><label>Cadena<select id="chain"><option value="">Todas</option><option value="bsc">BNB Smart Chain</option><option value="solana">Solana</option></select></label><label>Buscar<input id="query" type="search" placeholder="Símbolo o contrato" maxlength="120"></label></div>
 <p id="status" role="status">Cargando observaciones…</p><div id="results"></div><div class="pages"><button id="prev" disabled>Anterior</button><button id="next" disabled>Siguiente</button></div></section><details><summary>Investigar por contrato</summary>
 <form id="investigate"><label>Cadena<select id="request-chain"><option value="bsc">BNB Smart Chain</option><option value="solana">Solana</option></select></label><label>Contrato<input id="address" required maxlength="48" autocomplete="off"></label><button>Investigar</button></form>
-<p id="request-status" role="status"></p></details><section id="detail" aria-live="polite" tabindex="-1"></section></main><script type="module" src="/v2/portal.js"></script></body></html>
+<p id="request-status" role="status"></p></details><section id="detail" aria-live="polite" tabindex="-1"></section></section></section></main></div>
+
+<link rel="stylesheet" href="/v2/assets/expedientes.css"><script type="module" src="/v2/portal.js"></script>
+<script src="assets/interfaz.js"></script>
+<script src="assets/graficas.js"></script>
+<script src="assets/sistema.js"></script>
+</body></html>

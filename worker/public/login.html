@@ -1,50 +1,10 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Crypto Intelligence System — Acceso</title>
-<style>
-  :root {
-    --bg: #fbfbfa; --ink: #171717; --muted: #7a7a78; --border: #e6e4e0;
-    --black: #111111;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font-family: 'Helvetica Neue', Arial, sans-serif;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .card { width: 100%; max-width: 360px; padding: 0 28px; }
-  h1 {
-    font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 600;
-    letter-spacing: -0.02em; margin: 0 0 6px;
-  }
-  .sub { color: var(--muted); font-size: 13px; margin: 0 0 40px; line-height: 1.5; }
-  label {
-    display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
-    color: var(--muted); font-weight: 600; margin-bottom: 7px; margin-top: 20px;
-  }
-  input {
-    width: 100%; border: none; border-bottom: 1px solid var(--border); background: transparent;
-    padding: 8px 2px; font-size: 15px; color: var(--ink); font-family: inherit;
-  }
-  input:focus { outline: none; border-bottom-color: var(--black); }
-  button {
-    width: 100%; margin-top: 34px; background: var(--black); color: #fff; border: none;
-    padding: 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
-    letter-spacing: .01em;
-  }
-  button:hover { background: #2b2b2b; }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  .error { color: #9a2c2c; font-size: 12.5px; margin-top: 16px; min-height: 16px; }
-</style>
-</head>
-<body>
-  <form class="card" id="loginForm">
-    <h1>Crypto Intelligence System</h1>
-    <p class="sub">Acceso privado. Investigación de oportunidades tempranas en Binance Alpha.</p>
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Acceso · CIS</title><link rel="stylesheet" href="/login-assets/cis.css"><style>
+body.access{min-height:100vh;margin:0;background:#eaf0d9;color:#1e3523}.access-inner{max-width:1080px;min-height:100vh;margin:auto;display:grid;align-content:center;grid-template-columns:minmax(260px,1fr) 1fr;gap:3vw;padding:36px;box-sizing:border-box}
+.access .brand{color:#213b28}.access h1{font:600 clamp(3.1rem,7vw,6rem)/.94 Barlow,sans-serif;margin:28px 0 18px}.access p{max-width:38ch}.access label{display:block;font-weight:650;font-size:.9rem;margin:12px 0 4px}.access input,.access button{width:100%;box-sizing:border-box;border-radius:8px;padding:12px 14px;font:inherit}.access input{border:1px solid #a2b398;background:#fff}.access button{border:0;background:#244e32;color:white;font-weight:700;margin-top:14px;cursor:pointer}.access form{max-width:350px}.access-art{max-width:100%;align-self:center}.error{color:#943b29}.access input:focus-visible,.access button:focus-visible{outline:3px solid #66873b}
+@media(max-width:650px){.access-inner{grid-template-columns:1fr;padding:24px}.access-art{display:none}}</style></head>
+<body class="access"><main class="access-inner"><section><span class="brand"><img width="38" src="/login-assets/token-small.png" alt="">CIS.</span><h1>Crypto Intelligence System<span>.</span></h1><p>Accede a tus candidatos, expedientes y resultados de investigación.</p><form class="card" id="loginForm">
+
+
 
     <label for="username">Usuario</label>
     <input id="username" name="username" autocomplete="username" required>
@@ -54,9 +14,7 @@
 
     <div class="error" id="error"></div>
     <button type="submit" id="submitBtn">Entrar</button>
-  </form>
-
-<script>
+  </form></section><img class="access-art" src="/login-assets/token.png" alt=""></main><script>
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = document.getElementById("submitBtn");
@@ -78,12 +36,10 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
       btn.disabled = false;
       return;
     }
-    window.location.href = "/";
+    window.location.href = "/v2/";
   } catch (err) {
     errorEl.textContent = "Error de conexión. Intenta de nuevo.";
     btn.disabled = false;
   }
 });
-</script>
-</body>
-</html>
+</script></body></html>

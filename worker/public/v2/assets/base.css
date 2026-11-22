@@ -1,0 +1,194 @@
+:root {
+    --bg: #fbfbfa;
+    --surface: #fdfdfc;
+    --border: #e8e6e2;
+    --border-strong: #d8d5cf;
+    --ink: #171717;
+    --ink-soft: #3a3a38;
+    --muted: #8a8985;
+    --faint: #b4b2ac;
+    --black: #111111;
+    /* Color funcional, no decorativo: solo para datos con signo (retorno real/en vivo,
+       hit/miss) -- el resto del sistema se queda monocromo a propósito. */
+    --positive: #146c34;
+    --positive-soft: #eef4f0;
+    --negative: #b91c1c;
+    --negative-soft: #f7eeed;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  h1, h2, h3 { font-family: Georgia, 'Times New Roman', serif; letter-spacing: -0.015em; font-weight: 600; }
+
+  header {
+    padding: 30px 40px 22px; display: flex; justify-content: space-between; align-items: flex-end;
+    max-width: 920px; margin: 0 auto;
+  }
+  header h1 { font-size: 22px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 12.5px; margin-top: 6px; font-family: inherit; }
+  header .session { display: flex; align-items: center; gap: 14px; }
+  header .session span { font-size: 12px; color: var(--faint); }
+  .link-btn {
+    background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px; padding: 0; font-family: inherit;
+  }
+  .link-btn:hover { color: var(--ink); }
+
+  nav.tabs {
+    max-width: 920px; margin: 0 auto; display: flex; gap: 28px; padding: 0 40px 18px;
+    border-bottom: 1px solid var(--border); overflow-x: auto;
+  }
+  nav.tabs button {
+    background: none; border: none; padding: 6px 0; font-size: 12.5px; color: var(--faint);
+    cursor: pointer; border-bottom: 2px solid transparent; font-weight: 600; white-space: nowrap;
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  nav.tabs button.active { color: var(--ink); border-bottom-color: var(--black); }
+  nav.tabs button:hover { color: var(--ink-soft); }
+
+  main { max-width: 920px; margin: 0 auto; padding: 44px 40px 100px; }
+  .view { display: none; flex-direction: column; gap: 52px; }
+  .view.active { display: flex; }
+
+  section.block { display: flex; flex-direction: column; gap: 14px; }
+  section.block h2 { font-size: 18px; margin: 0; }
+  section.block .desc { color: var(--muted); font-size: 13px; margin: 0; max-width: 62ch; line-height: 1.6; }
+
+  .rule { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+  button.btn {
+    background: var(--black); color: #fff; border: none; padding: 12px 20px; border-radius: 6px;
+    font-size: 13px; cursor: pointer; font-weight: 600; transition: transform .1s, background .15s;
+  }
+  button.btn:hover { background: #2b2b2b; }
+  button.btn:active { transform: scale(0.98); }
+  button.btn:disabled { opacity: .4; cursor: not-allowed; }
+  button.btn.secondary { background: transparent; color: var(--ink-soft); border: 1px solid var(--border-strong); }
+  button.btn.secondary:hover { background: var(--surface); border-color: var(--ink); }
+  button.btn.small { padding: 8px 14px; font-size: 12px; }
+
+  #log {
+    background: #14140f; color: #c9c8c2; font-family: 'SF Mono', Consolas, monospace;
+    font-size: 11.5px; padding: 16px 18px; border-radius: 8px; max-height: 240px; overflow-y: auto;
+    white-space: pre-wrap; line-height: 1.6;
+  }
+
+  /* Hero numbers -- sin cajas, tipografia grande separada por espacio */
+  .numbers-row { display: flex; flex-wrap: wrap; gap: 48px; padding: 4px 0; }
+  .numbers-row .num-item .num { font-size: 34px; font-weight: 600; font-family: Georgia, serif; line-height: 1; }
+  .numbers-row .num-item .lbl { font-size: 11.5px; color: var(--muted); margin-top: 8px; letter-spacing: .02em; }
+
+  /* La conclusión del Resumen lidera antes que los números que la respaldan. */
+  .lead-line { font-size: 15.5px; line-height: 1.55; color: var(--ink); max-width: 68ch; }
+  .lead-line strong { font-family: Georgia, serif; }
+
+  /* Grupos de estadísticas dentro de un mismo bloque: separación deliberada entre grupos,
+     nada entre el título del grupo y sus números. */
+  .stat-group + .stat-group { margin-top: 28px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
+  .card { border-top: 1px solid var(--border-strong); padding-top: 18px; }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 10px; }
+  .card-head .sym { font-size: 18px; font-weight: 600; font-family: Georgia, serif; }
+  .card-head .name { color: var(--muted); font-size: 12px; display: block; margin-top: 2px; }
+
+  .badge {
+    display: inline-block; padding: 4px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; border: 1px solid transparent;
+  }
+  .v-strong { background: var(--black); color: #fff; }
+  .v-watch { background: #45443f; color: #fff; }
+  .v-highrisk { background: transparent; color: var(--ink); border-color: var(--black); }
+  .v-reject { background: var(--border); color: var(--muted); }
+  .v-insufficient { background: transparent; color: var(--faint); border-style: dashed; border-color: var(--border-strong); }
+
+  .scores { display: flex; gap: 22px; margin: 14px 0; flex-wrap: wrap; }
+  .score-item .val { font-size: 18px; font-weight: 700; font-family: Georgia, serif; }
+  .score-item .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+
+  .section-title { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .07em; margin: 14px 0 5px; font-weight: 700; }
+  .text-block { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); max-width: 68ch; }
+  ul.compact { margin: 4px 0; padding-left: 16px; font-size: 12.5px; color: var(--ink-soft); max-width: 68ch; }
+  ul.compact li { margin-bottom: 3px; }
+
+  /* Agrupa contenido que se lee en contraste (bull/bear, evidencia/riesgos) lado a lado en
+     vez de apilado -- el card ya es lo bastante ancho (min 480px) para que cada columna
+     mantenga una medida de lectura cómoda. */
+  .debate-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 32px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+  .debate-grid > div { min-width: 0; }
+  .debate-grid .section-title { margin-top: 0; }
+  .debate-grid .text-block, .debate-grid ul.compact { max-width: none; }
+  @media (max-width: 640px) {
+    .debate-grid { grid-template-columns: 1fr; row-gap: 18px; }
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--faint); padding: 0 10px 10px 0; font-weight: 700; border-bottom: 1px solid var(--border-strong);
+  }
+  table td { padding: 12px 10px 12px 0; border-bottom: 1px solid var(--border); color: var(--ink-soft); }
+  table tr:last-child td { border-bottom: none; }
+  .table-wrap { overflow-x: auto; }
+  .ranking-table tbody tr:hover { background: var(--surface); }
+  .ranking-table th:hover { color: var(--ink-soft); }
+
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .faint { color: var(--faint); }
+
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px,1fr)); gap: 20px 28px; }
+  label.cfg { font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  input[type=number] {
+    width: 100%; background: transparent; border: none; border-bottom: 1px solid var(--border-strong);
+    color: var(--ink); padding: 7px 2px; font-size: 14px; font-family: inherit;
+  }
+  input[type=number]:focus { outline: none; border-bottom-color: var(--black); }
+
+  .disclaimer { font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--black); padding-left: 16px; line-height: 1.6; }
+
+  .pill-inline { display: inline-block; background: var(--border); color: var(--ink-soft); font-size: 10.5px; padding: 3px 9px; border-radius: 10px; margin: 2px 5px 2px 0; }
+  .pill-inline.pos { background: var(--positive-soft); color: var(--positive); }
+  .pill-inline.neg { background: var(--negative-soft); color: var(--negative); }
+
+  /* Color funcional: solo en valores con signo (retorno real/en vivo). Ver nota en :root. */
+  .pct-positive { color: var(--positive); }
+  .pct-negative { color: var(--negative); }
+
+  .empty-state { padding: 30px 0; color: var(--faint); font-size: 13px; }
+
+  .projection-box {
+    display: flex; gap: 18px; flex-wrap: wrap; background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: 8px; padding: 12px 14px; margin: 12px 0 2px;
+  }
+  .projection-item .val { font-size: 15px; font-weight: 700; font-family: Georgia, serif; }
+  .projection-item .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; max-width: 160px; line-height: 1.3; }
+
+  .radar-row { display: flex; gap: 18px; align-items: center; margin: 4px 0 6px; }
+  .radar-row svg { flex-shrink: 0; }
+  .radar-row .radar-caption { font-size: 11px; color: var(--muted); line-height: 1.6; }
+
+  .card-head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+  /* Explicación simple de qué es el proyecto, antes de los scores/riesgo -- orienta primero,
+     evalúa después. */
+  .project-explainer { font-size: 14px; line-height: 1.6; color: var(--ink-soft); max-width: 68ch; margin: 2px 0 0; }
+
+  .timeline-wrap { margin: 10px 0 4px; }
+  .timeline-wrap svg { width: 100%; height: auto; display: block; }
+  .timeline-caption { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .pipeline-steps { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 8px 0; max-width: 480px; }
+  .pipeline-step { display: flex; flex-direction: column; align-items: center; width: 100%; }
+  .pipeline-step-box {
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 7px;
+    padding: 9px 16px; font-size: 12px; font-weight: 600; color: var(--ink); text-align: center;
+    width: 100%; max-width: 340px;
+  }
+  .pipeline-step-arrow { color: var(--border-strong); font-size: 13px; line-height: 1.4; }
+  .pipeline-step-sub { font-size: 10.5px; color: var(--muted); text-align: center; max-width: 380px; margin: 2px 0 4px; line-height: 1.4; }

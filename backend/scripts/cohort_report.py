@@ -88,6 +88,24 @@ def valid_price(value):
         return False
 
 
+def inputs():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT s.*, v.config_hash,b.btc_usdt FROM survivor_observations s LEFT JOIN observation_benchmarks b ON b.run_id=s.run_id "
+                            "JOIN run_versions v ON s.run_id=v.run_id ORDER BY s.observed_at, s.run_id").fetchall()
+        independent = conn.execute("SELECT h.*,c.liquidity,c.btc_usdt FROM horizon_prices h LEFT JOIN horizon_context c ON c.token_key=h.token_key AND c.days=h.days AND c.observed_at=h.observed_at").fetchall()
+    return rows, independent
+
+
+def publish_snapshot():
+    rows, independent = inputs()
+    now = datetime.now(timezone.utc)
+    results = {str(days):summarize(rows,days,now,independent) for days in (7,30,90,180)}
+    with get_conn() as db:
+        db.execute("INSERT INTO analytics_snapshots(kind,computed_at,payload) VALUES(?,?,?)",
+                   ("shadow_cohorts",now.isoformat(),json.dumps(results,ensure_ascii=False)))
+    return results
+
+
 if __name__ == "__main__":
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--days", type=int, choices=(7,30,90,180), default=7)
@@ -96,8 +114,5 @@ if __name__ == "__main__":
     args = cli.parse_args()
     if not valid_price(args.ticket_usd) or not 0 <= args.fee < 1:
         cli.error("Monto o comisión inválidos")
-    with get_conn() as conn:
-        rows = conn.execute("SELECT s.*, v.config_hash,b.btc_usdt FROM survivor_observations s LEFT JOIN observation_benchmarks b ON b.run_id=s.run_id "
-                            "JOIN run_versions v ON s.run_id=v.run_id ORDER BY s.observed_at, s.run_id").fetchall()
-        independent = conn.execute("SELECT h.*,c.liquidity,c.btc_usdt FROM horizon_prices h LEFT JOIN horizon_context c ON c.token_key=h.token_key AND c.days=h.days AND c.observed_at=h.observed_at WHERE h.days=?", (args.days,)).fetchall()
-    print(json.dumps(summarize(rows, args.days, datetime.now(timezone.utc), independent,args.ticket_usd,args.fee), indent=2))
+    rows, independent = inputs()
+    print(json.dumps(summarize(rows,args.days,datetime.now(timezone.utc),independent,args.ticket_usd,args.fee),indent=2))

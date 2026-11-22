@@ -1,0 +1,15 @@
+
+#view-expedientes .filters,#view-expedientes .pages,#investigate{display:flex;gap:14px;align-items:end;flex-wrap:wrap}
+#view-expedientes label{display:grid;gap:5px;font-weight:600}
+#view-expedientes input,#view-expedientes select,#view-expedientes button{font:inherit;border:1px solid #b8c3b9;border-radius:7px;padding:9px 12px;background:white;color:#253b2b}
+#view-expedientes button{cursor:pointer}#view-expedientes button:disabled{opacity:.5}
+#view-expedientes .research-row{display:grid;width:100%;gap:12px;grid-template-columns:1fr 1fr 2fr;text-align:left;border-width:0 0 1px;border-radius:0;padding:13px 5px}
+#view-expedientes .research-row:hover{background:#f0f4e8}#view-expedientes small,#detail{overflow-wrap:anywhere}
+#view-expedientes details,#detail{margin-top:24px;padding:20px 0;border-top:1px solid #cfdbcc}
+#detail .metric{display:block;margin:8px 0;padding:8px 0;border-bottom:1px solid #e0e4dd}
+#detail h3{margin-top:22px}#view-expedientes summary{cursor:pointer;font-weight:700}#status,#request-status{margin:14px 0}
+@media(max-width:620px){#view-expedientes .research-row{grid-template-columns:1fr 1fr}#view-expedientes .research-row small{grid-column:1/-1}#investigate input{max-width:100%}.cycle{flex-wrap:wrap}}
+
+#predictions.cards{grid-template-columns:repeat(auto-fill,minmax(min(100%,480px),1fr))}
+#predictions .card{min-width:0;overflow-wrap:anywhere}
+#selectionNote{color:#405648;font-size:.93rem;padding:0 0 12px}

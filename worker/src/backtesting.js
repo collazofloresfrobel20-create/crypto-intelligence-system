@@ -19,7 +19,7 @@ function confidenceBucket(score) {
 
 export async function getPerformanceStats(db) {
   const evaluatedRaw = await db.all(
-    "SELECT * FROM predictions WHERE status = 'evaluated' AND category = 'analyzed'"
+    "SELECT confidence_score,max_return_pct,max_drawdown_pct,thesis_result FROM predictions WHERE status = 'evaluated' AND category = 'analyzed'"
   );
   const evaluated = evaluatedRaw.map(rowWithJson);
   const totalRow = await db.one("SELECT COUNT(*) c FROM predictions WHERE category = 'analyzed'");
@@ -69,10 +69,10 @@ export async function getPerformanceStats(db) {
 
 export async function getFilterEfficacyStats(db) {
   const analyzed = (
-    await db.all("SELECT * FROM predictions WHERE status='evaluated' AND category='analyzed'")
+    await db.all("SELECT max_return_pct FROM predictions WHERE status='evaluated' AND category='analyzed'")
   ).map(rowWithJson);
   const discarded = (
-    await db.all("SELECT * FROM predictions WHERE status='evaluated' AND category='discarded'")
+    await db.all("SELECT max_return_pct,rejection_reasons FROM predictions WHERE status='evaluated' AND category='discarded'")
   ).map(rowWithJson);
 
   const summarize = (rows) => {
@@ -116,7 +116,7 @@ export async function getHistoryOverview(db) {
     await db.one("SELECT COUNT(*) c FROM predictions WHERE category='analyzed'")
   ).c;
   const evaluated = (
-    await db.all("SELECT * FROM predictions WHERE category='analyzed' AND status='evaluated'")
+    await db.all("SELECT symbol,thesis_result,max_return_pct,return_pct,time_to_max_hours,verdict FROM predictions WHERE category='analyzed' AND status='evaluated'")
   ).map(rowWithJson);
 
   const n = evaluated.length;

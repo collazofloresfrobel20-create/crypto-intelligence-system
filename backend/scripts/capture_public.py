@@ -63,6 +63,8 @@ def capture(limit=6):
     for k in arms:
         token = eligible[k]
         store_dossier(run,k,token,catalog,headlines)
+    from scripts.cohort_report import publish_snapshot
+    publish_snapshot()
     return {"run":run,"universe":len(universe),"eligible":len(eligible),"dossiers":len(arms),"feed_errors":errors}
 
 
