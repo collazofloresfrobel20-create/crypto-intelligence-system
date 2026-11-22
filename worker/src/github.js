@@ -4,14 +4,14 @@
  * de ejecución de un Worker). En vez de eso, dispara el workflow de GitHub Actions que hace
  * el trabajo pesado, vía la API REST de GitHub.
  */
-export async function dispatchUpdateWorkflow(env) {
+export async function dispatchUpdateWorkflow(env, requestId = null) {
   const [owner, repo] = (env.GITHUB_REPO || "").split("/");
   if (!owner || !repo || !env.GITHUB_PAT) {
     throw new Error(
       "Falta configurar GITHUB_REPO y/o GITHUB_PAT como secretos del Worker."
     );
   }
-  const workflowFile = env.GITHUB_WORKFLOW_FILE || "update-cycle.yml";
+  const workflowFile = requestId ? "investigate-token.yml" : env.GITHUB_WORKFLOW_FILE || "update-cycle.yml";
   const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/dispatches`;
 
   const resp = await fetch(url, {
@@ -22,7 +22,7 @@ export async function dispatchUpdateWorkflow(env) {
       "X-GitHub-Api-Version": "2022-11-28",
       "User-Agent": "cis-dashboard-worker",
     },
-    body: JSON.stringify({ ref: env.GITHUB_BRANCH || "main" }),
+    body: JSON.stringify({ ref: env.GITHUB_BRANCH || "main", ...(requestId ? {inputs:{request_id:requestId}} : {}) }),
   });
 
   if (!resp.ok) {

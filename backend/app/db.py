@@ -24,6 +24,49 @@ TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "")
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS horizon_context (
+    token_key TEXT NOT NULL, days INTEGER NOT NULL, observed_at TEXT NOT NULL,
+    liquidity REAL, btc_usdt REAL, PRIMARY KEY(token_key,days)
+);
+CREATE TABLE IF NOT EXISTS observation_benchmarks (
+    run_id TEXT PRIMARY KEY, btc_usdt REAL, observed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_requests (
+    id TEXT PRIMARY KEY, token_key TEXT NOT NULL, created_at TEXT NOT NULL,
+    status TEXT NOT NULL, result_run TEXT, error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_requests_key_date ON research_requests(token_key,created_at);
+CREATE TABLE IF NOT EXISTS dossier_reviews (
+    run_id TEXT NOT NULL, token_key TEXT NOT NULL, reviewed_at TEXT NOT NULL,
+    evidence_hash TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(run_id,token_key,reviewed_at)
+);
+CREATE TABLE IF NOT EXISTS horizon_prices (
+    token_key TEXT NOT NULL, days INTEGER NOT NULL, observed_at TEXT NOT NULL, price REAL NOT NULL,
+    PRIMARY KEY (token_key, days)
+);
+CREATE TABLE IF NOT EXISTS run_versions (
+    run_id TEXT PRIMARY KEY, config_hash TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_dossiers (
+    run_id TEXT NOT NULL, token_key TEXT NOT NULL, read_at TEXT NOT NULL, payload TEXT NOT NULL,
+    PRIMARY KEY (run_id, token_key)
+);
+CREATE TABLE IF NOT EXISTS survivor_observations (
+    run_id TEXT NOT NULL,
+    token_key TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    symbol TEXT,
+    source TEXT,
+    price REAL,
+    liquidity REAL,
+    volume_24h REAL,
+    holders INTEGER,
+    eligible INTEGER NOT NULL,
+    shortlisted INTEGER NOT NULL,
+    shadow_arm TEXT,
+    PRIMARY KEY (run_id, token_key)
+);
+CREATE INDEX IF NOT EXISTS idx_survivor_key_time ON survivor_observations (token_key, observed_at);
 CREATE TABLE IF NOT EXISTS predictions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id TEXT NOT NULL,
@@ -226,6 +269,7 @@ _MIGRATIONS = [
     "ALTER TABLE predictions ADD COLUMN premortem_failure_modes TEXT",
     # Plan v2, C4: veredicto por reglas explicitas (verdict_v2.py), solo shadow.
     "ALTER TABLE predictions ADD COLUMN verdict_v2 TEXT",
+    "ALTER TABLE survivor_observations ADD COLUMN shadow_arm TEXT",
 ]
 
 
