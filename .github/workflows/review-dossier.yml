@@ -1,0 +1,32 @@
+name: Revisar expediente con dos jueces
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+        working-directory: backend
+      - name: Revisar por separado y guardar en Turso
+        working-directory: backend
+        env:
+          CIS_REVIEW_RUN: ${{ inputs.run_id }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_SMART_API_KEYS: ${{ secrets.GEMINI_SMART_API_KEYS }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || secrets.GROQ_API_KEY2 }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: python scripts/review_one.py

@@ -4,7 +4,7 @@ import os
 
 import requests
 
-from . import project_evidence
+from . import project_evidence, groq_client
 from .config import settings
 from .gemini_client import generate_json
 
@@ -47,6 +47,11 @@ def gemini(prompt):
                          prompt=prompt, response_schema=SCHEMA, use_search=False, max_retries=1)
 
 
+def groq(prompt):
+    return groq_client.generate_json(model=settings.GROQ_MODEL, system_instruction=RULES,
+                                     prompt=prompt, required_keys=SCHEMA["required"], max_retries=1)
+
+
 def evaluate(dossier, judges=None):
     facts = {f"F{i}": fact for i, fact in enumerate(project_evidence.analyst_facts(dossier), 1)}
     for criterion, assessment in dossier.get("verified_assessments", {}).items():
@@ -57,7 +62,13 @@ def evaluate(dossier, judges=None):
     if not facts:
         return result
     prompt = json.dumps({"hechos": facts, "esquema": SCHEMA}, ensure_ascii=False)
-    for name, judge in (judges or {"gemini": gemini, "nvidia": nvidia}).items():
+    if judges is None:
+        judges = {"gemini":gemini}
+        if os.getenv("NVIDIA_API_KEY") and os.getenv("CIS_NVIDIA_JUDGE_MODEL"):
+            judges["nvidia"] = nvidia
+        else:
+            judges["groq"] = groq
+    for name, judge in judges.items():
         try:
             assessment = judge(prompt)
             refs = assessment["referencias"]
