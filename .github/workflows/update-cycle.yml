@@ -13,7 +13,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 90  # margen amplio: un ciclo real puede tardar 30-60 min por el rate limit gratuito de Gemini
+    timeout-minutes: 150  # con analistas funcionando ya hubo corridas de 73 min; 90 quedaba justo
     steps:
       - uses: actions/checkout@v4
 
