@@ -109,7 +109,7 @@ class Settings:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()  # un salto de línea en el secret rompe el header HTTP
     # Confirmar el nombre exacto contra https://console.groq.com/docs/models al desplegar --
     # los modelos gratuitos de Groq rotan con cierta frecuencia, más que los de Gemini.
-    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")  # llama-3.3-70b-versatile se retiró (404 desde ago-2026)
     # "shadow" (por defecto): se llama a Groq y se guarda su veredicto + si coincide con
     # Gemini, pero el veredicto final que se usa (dashboard, Telegram) sigue siendo el de
     # Gemini sin tocar -- primero se mide si el desacuerdo predice peor resultado real, no se
