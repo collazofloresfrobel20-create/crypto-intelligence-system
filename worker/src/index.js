@@ -1,4 +1,4 @@
-import { researchApi, requestResearch } from "./research.js";
+import { researchApi, requestResearch, requestJudges } from "./research.js";
 import { getDb, rowWithJson } from "./db.js";
 import * as auth from "./auth.js";
 import * as gh from "./github.js";
@@ -186,6 +186,11 @@ async function handleApi(path, request, env) {
   const db = getDb(env);
   const url = new URL(request.url);
 
+  if(path==="/api/v2/judges" && request.method==="POST") return requestJudges(db,request,env);
+  if(path==="/api/v2/judges" && request.method==="GET"){
+    const job=await db.one("SELECT status FROM judge_requests WHERE id=?",[url.searchParams.get("id")]);
+    return job?json(job):json({detail:"Solicitud inexistente"},404);
+  }
   if (path === "/api/v2/investigate" && request.method === "POST") return requestResearch(db,request,env);
   if (path === "/api/v2/request" && request.method === "GET") {
     const job=await db.one("SELECT * FROM research_requests WHERE id=?",[url.searchParams.get("id")]);

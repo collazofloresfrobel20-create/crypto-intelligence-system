@@ -2,8 +2,11 @@ name: Revisar expediente con dos jueces
 on:
   workflow_dispatch:
     inputs:
+      request_id:
+        required: false
+        type: string
       run_id:
-        required: true
+        required: false
         type: string
 permissions:
   contents: read
@@ -23,6 +26,7 @@ jobs:
       - name: Revisar por separado y guardar en Turso
         working-directory: backend
         env:
+          CIS_REVIEW_ID: ${{ inputs.request_id }}
           CIS_REVIEW_RUN: ${{ inputs.run_id }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_SMART_API_KEYS: ${{ secrets.GEMINI_SMART_API_KEYS }}

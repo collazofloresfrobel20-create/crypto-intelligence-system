@@ -38,7 +38,9 @@ def summarize(entries, horizon, as_of, independent_prices=(), ticket=100., fee=.
         first = next((row for row in observations if row["eligible"]), None)
         if first is None:
             continue
-        group = "preseleccionado" if first["shortlisted"] else "alternativa"
+        group = "alternativa"
+        if first["shortlisted"]:
+            group = {"ranked":"ranking","random":"sorteo"}.get(first.get("shadow_arm"),"preseleccionado") if first["run_id"].startswith("shadow-") else "preseleccionado"
         chain = first["token_key"].split(":", 1)[0]
         values = groups[(chain, first["config_hash"], group)]
         target = deadline(first)

@@ -49,6 +49,30 @@ async function detail(row, supplied = null) {
       const peers = m.peers_by_same_category_and_chain || [];
       if (peers.length) append(panel,"p","Comparables de " + m.slug + " · " + peers.map(p => p.slug + " (" + usd(p.tvl_usd) + ")").join(" · "));
     }
+    if(!d.blind_review || d.blind_review.estado==="evaluacion_incompleta"){
+      const button=append(panel,"button","Contrastar con dos jueces");
+      const feedback=append(panel,"p","");
+      button.onclick=async()=>{
+        button.disabled=true;
+        try{
+          const r=await fetch("/api/v2/judges",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({run:row.run_id,key:row.token_key})});
+          if(r.status===401){location.assign("/login");return;}
+          if(!r.ok)throw Error((await r.json()).detail || "No se pudo iniciar");
+          let job=await r.json();
+          const reviewId=job.id;
+          const deadline=Date.now()+12*60*1000;
+          while(["queued","running"].includes(job.status) && seq===detailSequence && Date.now()<deadline){
+            feedback.textContent="Evaluación independiente en curso…";
+            await new Promise(resolve=>setTimeout(resolve,4000));
+            job=await get("/api/v2/judges",{id:reviewId});
+          }
+          if(seq!==detailSequence)return;
+          if(job.status==="done")await detail(row);
+          else feedback.textContent=job.status==="error"?"Los jueces no completaron la evaluación.":"La evaluación continúa. Abre la ficha más tarde.";
+        }catch(error){feedback.textContent=error.message || "No se pudo completar la revisión.";}
+        finally{button.disabled=false;}
+      };
+    }
     for (const [name,j] of Object.entries(d.blind_review?.judges || {})) {
       append(panel,"h3","Revisión de " + name);
       append(panel,"p",j.error ? "Evaluación incompleta" : [j.tesis,j.rival,j.invalidacion].join(" · "));

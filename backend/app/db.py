@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS research_requests (
     status TEXT NOT NULL, result_run TEXT, error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_requests_key_date ON research_requests(token_key,created_at);
+CREATE TABLE IF NOT EXISTS judge_requests (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL, token_key TEXT NOT NULL, requested_at TEXT NOT NULL,
+        status TEXT NOT NULL, UNIQUE(run_id,token_key)
+);
 CREATE TABLE IF NOT EXISTS dossier_reviews (
     run_id TEXT NOT NULL, token_key TEXT NOT NULL, reviewed_at TEXT NOT NULL,
     evidence_hash TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(run_id,token_key,reviewed_at)
