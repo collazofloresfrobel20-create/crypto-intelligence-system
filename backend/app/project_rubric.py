@@ -58,6 +58,7 @@ def evaluate(dossier):
             checked = corroborate(dossier, criterion, assessment)
             if checked:
                 rate(criterion, *checked)
+    accrual = corroborate(dossier, "captura_de_valor", dossier.get("verified_assessments", {}).get("captura_de_valor"))
     covered = sum(r["weight"] for r in rows.values() if r["level"] is not None)
     lower = sum(r["weight"] * (r["level"] or 0) / 100 for r in rows.values())
     score = 100*lower/covered if covered >= 60 else None
@@ -73,14 +74,15 @@ def evaluate(dossier):
     elif score is not None:
         if score >= 50 and dossier.get("market_signals", {}).get("price_up_liquidity_down") is True:
             verdict = "High Risk"
-        elif (score >= 75 and covered >= 80 and rows["uso"]["level"] and rows["detonador"]["level"]
+        elif (score >= 75 and accrual and accrual[0] >= 75 and covered >= 80 and rows["uso"]["level"] and rows["detonador"]["level"]
               and consensus == "requiere_verificacion_de_tesis" and rows["producto"]["level"]):
             verdict = "Strong Opportunity"
         elif score >= 60:
             verdict = "Watchlist"
     return {"dimensions": rows, "coverage": covered, "range": [round(lower,1),round(lower+100-covered,1)],
             "score": round(score, 2) if score is not None else None, "verdict": verdict, "vetoes": vetoes,
-            "contradictions": contradictions}
+            "contradictions": contradictions,
+            "captura_de_valor": {"level": accrual[0], "reason": accrual[1]} if accrual else None}
 
 
 def corroborate(dossier, criterion, item):

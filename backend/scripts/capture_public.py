@@ -1,5 +1,6 @@
 """Captura en sombra con APIs públicas. No llama IA ni envía alertas."""
 import hashlib
+import inspect
 import json
 import os
 import sys
@@ -75,7 +76,22 @@ def collect_inputs(run, limit):
                 feeds_ok=all(not feed["errors"] and feed["returned"] > 0 for feed in feeds.values()),
                 limit=limit, btc_usdt=market.get("btc_usdt"), observed_at=stamp, schema=1,
                 filters={name: getattr(settings, name) for name in filters.THRESHOLDS},
-                filter_hash=filters.rule_hash())
+                filter_hash=filters.rule_hash(), code_revision=os.getenv("GITHUB_SHA"),
+                research_version=selection_policy.version(settings))
+
+
+def selection_version(limit):
+    """Huella de descubrimiento, filtros y reparto, independiente del lector y de los jueces."""
+    digest = hashlib.sha256()
+    for module in (filters, dexscreener):
+        digest.update(Path(module.__file__).read_bytes().replace(b"\r\n", b"\n"))
+    for fn in (binance_alpha.get_alpha_token_list, pipeline._asset_key, pipeline._token_key,
+               selection_policy.comparison_arms, collect_inputs):
+        digest.update(inspect.getsource(fn).replace("\r\n", "\n").encode())
+    params = {name: getattr(settings, name) for name in filters.THRESHOLDS}
+    params.update(limit=limit, fields=TOKEN_FIELDS, alpha_api=binance_alpha.BASE_URL + binance_alpha.TOKEN_LIST_PATH)
+    digest.update(json.dumps(params, sort_keys=True).encode())
+    return digest.hexdigest() + "-public-" + str(limit)
 
 
 def read_capture(conn, run):
@@ -90,8 +106,7 @@ def capture(limit=6, run_id=None):
         saved = read_capture(conn, run)
     if saved is None:
         data = collect_inputs(run, limit)
-        version = selection_policy.version(settings) + "-public-" + str(limit) + "-" + hashlib.sha256(
-            Path(__file__).read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]
+        version = selection_version(limit)
         with get_conn() as conn:
             conn.execute("INSERT OR IGNORE INTO shadow_captures VALUES (?,?,?,?,?)",
                          (run, data["observed_at"], version, "pending", json.dumps(data, separators=(",", ":"))))

@@ -45,6 +45,7 @@ class ShadowCaptureTests(unittest.TestCase):
             for mod in (cap, report):
                 stub(mod, "get_conn", new=local)
             stub(cap, "init_db")
+            stub(cap, "selection_version", return_value="test-version")
             stub(cap.market_regime, "compute_regime", return_value={})
             stub(cap.horizon_tracking, "capture")
             stub(cap.project_evidence, "protocol_catalog", return_value={})
@@ -94,6 +95,21 @@ class ShadowCaptureTests(unittest.TestCase):
         self.assertTrue(report.coverage_status(rows,now)["cumple"])
         rows[0]["event"] = "workflow_dispatch"
         self.assertEqual(report.coverage_status(rows,now)["dias_consecutivos"], 0)
+
+    def test_selection_fingerprint_tracks_quota(self):
+        self.assertNotEqual(cap.selection_version(6),cap.selection_version(4))
+
+    def test_filter_outcomes_show_missing_and_ignore_future_prices(self):
+        start = datetime(2026,11,1,tzinfo=timezone.utc)
+        archive = {"observed_at":start.isoformat(),"records":{"a":{"token":{"price":10}},"b":{"token":{"price":10}}}}
+        change = {"entran":["a","b"], "salen":[]}
+        def snapshot(days, price):
+            return dict(observed_at=(start+timedelta(days=days)).isoformat(),records={"a":{"token":{"price":price}}})
+        later = [snapshot(7.6,20), snapshot(7.1,8), snapshot(9,50)]
+        result = replay_filters.outcome_summary(archive,change,7,later,start+timedelta(days=10))["entran"]
+        self.assertEqual((result["medidos"],result["sin_precio"],result["caida_al_cierre_20pct"]),(1,1,1))
+        result = replay_filters.outcome_summary(archive,change,7,later,start+timedelta(days=7))["entran"]
+        self.assertEqual(result["inmaduros"],2)
 
     def test_contradiction_distinguishes_low_from_unknown_use(self):
         dossier = {"verified_assessments":{"producto":{}}, "protocol":{"metrics":[{

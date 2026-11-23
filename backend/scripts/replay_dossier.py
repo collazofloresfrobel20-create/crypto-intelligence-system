@@ -23,7 +23,7 @@ def replay(run_id, token_key, assessments=None, use_models=False):
         if not isinstance(assessments,dict):
             raise ValueError("Se esperaba un objeto por criterio")
         for key, item in assessments.items():
-            if key not in ("producto","competencia","distribucion","detonador") or not project_rubric.corroborate(dossier,key,item):
+            if key not in ("producto","competencia","distribucion","detonador","captura_de_valor") or not project_rubric.corroborate(dossier,key,item):
                 raise ValueError(f"Citas o revisión inválidas en {key}")
         dossier["verified_assessments"] = assessments
     if use_models:
