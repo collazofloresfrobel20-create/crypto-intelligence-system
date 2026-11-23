@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS horizon_prices (
     token_key TEXT NOT NULL, days INTEGER NOT NULL, observed_at TEXT NOT NULL, price REAL NOT NULL,
     PRIMARY KEY (token_key, days)
 );
+CREATE TABLE IF NOT EXISTS shadow_captures (
+    run_id TEXT PRIMARY KEY, observed_at TEXT NOT NULL, version TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('pending','captured','complete')), payload TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS run_versions (
     run_id TEXT PRIMARY KEY, config_hash TEXT NOT NULL
 );

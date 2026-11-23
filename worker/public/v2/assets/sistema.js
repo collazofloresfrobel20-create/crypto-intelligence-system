@@ -823,9 +823,13 @@ async function loadCohorts(){
   try {
     const snap=await api("/api/analytics/shadow_cohorts");
     function draw(){
-      const rows=snap.payload[$("cohortDays").value] || [];
-      if(!rows.length){box.textContent="Aún no hay contratos elegibles.";return;}
-      box.innerHTML='<p class="desc">Primera observación elegible por contrato. Retorno neto estimado para 100 USD, comisión de 0.3% por lado e impacto del pool. Referencia BTC/USDT.</p><div class="table-wrap"><table><thead><tr><th>Cadena</th><th>Grupo</th><th>Versión</th><th>Contratos</th><th>Pendientes</th><th>Sin precio</th><th>Neto mediano</th><th>Exceso vs. BTC</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+r.cadena+'</td><td>'+r.grupo+'</td><td>'+r.version.slice(0,8)+'</td><td>'+r.contratos+'</td><td>'+r.inmaduros+'</td><td>'+r.sin_precio+'</td><td>'+(r.mediana_neta_amm_pct==null?'Sin cierre':r.mediana_neta_amm_pct.toFixed(2)+'% · n='+r.con_costos)+'</td><td>'+(r.exceso_mediano_vs_btc_pp==null?'Sin cierre':r.exceso_mediano_vs_btc_pp.toFixed(2)+' pp · n='+r.con_benchmark_btc)+'</td></tr>').join('')+'</tbody></table></div>';
+      const horizon=$("cohortDays").value;
+      const rows=[...(snap.payload[horizon] || []), ...(snap.payload.universo_elegible?.[horizon] || [])];
+      const coverage=snap.payload.cobertura;
+      const status=coverage ? '<p class="desc">Cobertura operativa · '+Number(coverage.dias_consecutivos)+' de 14 días UTC completos con dos capturas programadas, fuentes disponibles y cupos cubiertos en ambas cadenas.</p>' : '';
+      const labels={ranking:"Ranking",sorteo:"Sorteo entre los restantes",alternativa:"Alternativas",todos_los_elegibles:"Total elegible (referencia)"};
+      if(!rows.length){box.innerHTML=status+'<p>Aún no hay contratos elegibles.</p>';return;}
+      box.innerHTML=status+'<p class="desc">Primera observación elegible por contrato. Retorno neto estimado para 100 USD, comisión de 0.3% por lado e impacto del pool. Referencia BTC/USDT.</p><div class="table-wrap"><table><thead><tr><th>Cadena</th><th>Grupo</th><th>Versión</th><th>Contratos</th><th>Pendientes</th><th>Sin precio</th><th>Neto mediano</th><th>Exceso vs. BTC</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+r.cadena+'</td><td>'+(labels[r.grupo] || r.grupo)+'</td><td>'+r.version.slice(0,8)+(r.version.includes('-public-') ? '…'+r.version.slice(-5) : '')+'</td><td>'+r.contratos+'</td><td>'+r.inmaduros+'</td><td>'+r.sin_precio+'</td><td>'+(r.mediana_neta_amm_pct==null?'Sin cierre':r.mediana_neta_amm_pct.toFixed(2)+'% · n='+r.con_costos)+'</td><td>'+(r.exceso_mediano_vs_btc_pp==null?'Sin cierre':r.exceso_mediano_vs_btc_pp.toFixed(2)+' pp · n='+r.con_benchmark_btc)+'</td></tr>').join('')+'</tbody></table></div>';
     }
     $("cohortDays").onchange=draw;draw();
   } catch { box.textContent="Seguimiento no disponible para esta base."; }

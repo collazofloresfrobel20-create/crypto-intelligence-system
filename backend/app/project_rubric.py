@@ -60,12 +60,15 @@ def evaluate(dossier):
                 rate(criterion, *checked)
     covered = sum(r["weight"] for r in rows.values() if r["level"] is not None)
     lower = sum(r["weight"] * (r["level"] or 0) / 100 for r in rows.values())
-    score = round(100*lower/covered) if covered >= 60 else None
+    score = 100*lower/covered if covered >= 60 else None
+    contradictions = []
+    if (rows["producto"]["level"] or 0) >= 75 and rows["uso"]["level"] == 0:
+        contradictions.append("Producto bien calificado con adopción en el tramo inferior frente a sus comparables.")
     verdict = "Insufficient Evidence"
     consensus = dossier.get("blind_review", {}).get("estado")
     if vetoes or score is not None and score < 35:
         verdict = "Reject"
-    elif consensus == "en_disputa":
+    elif consensus == "en_disputa" or contradictions:
         verdict = "En disputa"
     elif score is not None:
         if score >= 50 and dossier.get("market_signals", {}).get("price_up_liquidity_down") is True:
@@ -76,7 +79,8 @@ def evaluate(dossier):
         elif score >= 60:
             verdict = "Watchlist"
     return {"dimensions": rows, "coverage": covered, "range": [round(lower,1),round(lower+100-covered,1)],
-            "score": score, "verdict": verdict, "vetoes": vetoes}
+            "score": round(score, 2) if score is not None else None, "verdict": verdict, "vetoes": vetoes,
+            "contradictions": contradictions}
 
 
 def corroborate(dossier, criterion, item):

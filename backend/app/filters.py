@@ -1,12 +1,23 @@
 """Hard filters: de "cientos/miles de activos" a "candidatos tempranos" (spec sección 4)."""
+import hashlib
+import math
 import time
+from pathlib import Path
 
 from .config import settings
 
 
+THRESHOLDS = ("MIN_LIQUIDITY_USD", "MIN_VOLUME_24H_USD", "MAX_MARKET_CAP_USD", "MIN_HOLDERS", "MAX_LISTING_AGE_DAYS")
+
+
+def rule_hash():
+    return hashlib.sha256(Path(__file__).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
 def _num(v, default=0.0) -> float:
     try:
-        return float(v)
+        value = float(v)
+        return value if math.isfinite(value) else default
     except (TypeError, ValueError):
         return default
 
@@ -17,12 +28,13 @@ def pct_change_24h(token: dict) -> float | None:
     if v is None:
         return None
     try:
-        return float(v)
+        value = float(v)
+        return value if math.isfinite(value) else default
     except (TypeError, ValueError):
         return None
 
 
-def token_age_days(token: dict) -> float | None:
+def token_age_days(token: dict, *, now=None) -> float | None:
     """Antigüedad del listado en días, o None si el token no trae 'listingTime'."""
     listing_time = token.get("listingTime")
     if not listing_time:
@@ -31,10 +43,10 @@ def token_age_days(token: dict) -> float | None:
         listing_ms = float(listing_time)
     except (TypeError, ValueError):
         return None
-    return (time.time() * 1000 - listing_ms) / (1000 * 60 * 60 * 24)
+    return ((time.time() if now is None else now) * 1000 - listing_ms) / (1000 * 60 * 60 * 24)
 
 
-def _evaluate_filters(token: dict) -> tuple[list[str], list[dict]]:
+def _evaluate_filters(token: dict, *, config=settings, now=None) -> tuple[list[str], list[dict]]:
     """Corre los 5 chequeos de hard filters. Devuelve (razones_texto, margenes_numericos) --
     margenes solo incluye los filtros numéricos que fallaron, con el valor real, el umbral, y
     qué tan cerca estuvo de pasar (ratio_of_threshold), para poder distinguir en el dashboard
@@ -50,42 +62,42 @@ def _evaluate_filters(token: dict) -> tuple[list[str], list[dict]]:
     if token.get("offline"):
         reasons.append("token marcado offline en Binance Alpha")
 
-    if liquidity < settings.MIN_LIQUIDITY_USD:
-        reasons.append(f"liquidez {liquidity:,.0f} < mínimo {settings.MIN_LIQUIDITY_USD:,.0f}")
+    if liquidity < config.MIN_LIQUIDITY_USD:
+        reasons.append(f"liquidez {liquidity:,.0f} < mínimo {config.MIN_LIQUIDITY_USD:,.0f}")
         margins.append({
-            "filter": "MIN_LIQUIDITY_USD", "actual": liquidity, "threshold": settings.MIN_LIQUIDITY_USD,
-            "ratio_of_threshold": round(liquidity / settings.MIN_LIQUIDITY_USD, 3) if settings.MIN_LIQUIDITY_USD else None,
+            "filter": "MIN_LIQUIDITY_USD", "actual": liquidity, "threshold": config.MIN_LIQUIDITY_USD,
+            "ratio_of_threshold": round(liquidity / config.MIN_LIQUIDITY_USD, 3) if config.MIN_LIQUIDITY_USD else None,
         })
 
-    if volume_24h < settings.MIN_VOLUME_24H_USD:
-        reasons.append(f"volumen 24h {volume_24h:,.0f} < mínimo {settings.MIN_VOLUME_24H_USD:,.0f}")
+    if volume_24h < config.MIN_VOLUME_24H_USD:
+        reasons.append(f"volumen 24h {volume_24h:,.0f} < mínimo {config.MIN_VOLUME_24H_USD:,.0f}")
         margins.append({
-            "filter": "MIN_VOLUME_24H_USD", "actual": volume_24h, "threshold": settings.MIN_VOLUME_24H_USD,
-            "ratio_of_threshold": round(volume_24h / settings.MIN_VOLUME_24H_USD, 3) if settings.MIN_VOLUME_24H_USD else None,
+            "filter": "MIN_VOLUME_24H_USD", "actual": volume_24h, "threshold": config.MIN_VOLUME_24H_USD,
+            "ratio_of_threshold": round(volume_24h / config.MIN_VOLUME_24H_USD, 3) if config.MIN_VOLUME_24H_USD else None,
         })
 
     if market_cap <= 0:
         reasons.append("market cap no disponible")
-    elif market_cap > settings.MAX_MARKET_CAP_USD:
-        reasons.append(f"market cap {market_cap:,.0f} > máximo {settings.MAX_MARKET_CAP_USD:,.0f} (deja de ser small-cap)")
+    elif market_cap > config.MAX_MARKET_CAP_USD:
+        reasons.append(f"market cap {market_cap:,.0f} > máximo {config.MAX_MARKET_CAP_USD:,.0f} (deja de ser small-cap)")
         margins.append({
-            "filter": "MAX_MARKET_CAP_USD", "actual": market_cap, "threshold": settings.MAX_MARKET_CAP_USD,
-            "ratio_of_threshold": round(settings.MAX_MARKET_CAP_USD / market_cap, 3) if market_cap else None,
+            "filter": "MAX_MARKET_CAP_USD", "actual": market_cap, "threshold": config.MAX_MARKET_CAP_USD,
+            "ratio_of_threshold": round(config.MAX_MARKET_CAP_USD / market_cap, 3) if market_cap else None,
         })
 
-    if holders and holders < settings.MIN_HOLDERS:
-        reasons.append(f"holders {holders} < mínimo {settings.MIN_HOLDERS}")
+    if holders and holders < config.MIN_HOLDERS:
+        reasons.append(f"holders {holders} < mínimo {config.MIN_HOLDERS}")
         margins.append({
-            "filter": "MIN_HOLDERS", "actual": holders, "threshold": settings.MIN_HOLDERS,
-            "ratio_of_threshold": round(holders / settings.MIN_HOLDERS, 3) if settings.MIN_HOLDERS else None,
+            "filter": "MIN_HOLDERS", "actual": holders, "threshold": config.MIN_HOLDERS,
+            "ratio_of_threshold": round(holders / config.MIN_HOLDERS, 3) if config.MIN_HOLDERS else None,
         })
 
-    age_days = token_age_days(token)
-    if age_days is not None and age_days > settings.MAX_LISTING_AGE_DAYS:
-        reasons.append(f"listado hace {age_days:.0f} días > máximo {settings.MAX_LISTING_AGE_DAYS} (ya no es 'reciente')")
+    age_days = token_age_days(token, now=now)
+    if age_days is not None and age_days > config.MAX_LISTING_AGE_DAYS:
+        reasons.append(f"listado hace {age_days:.0f} días > máximo {config.MAX_LISTING_AGE_DAYS} (ya no es 'reciente')")
         margins.append({
-            "filter": "MAX_LISTING_AGE_DAYS", "actual": round(age_days, 1), "threshold": settings.MAX_LISTING_AGE_DAYS,
-            "ratio_of_threshold": round(settings.MAX_LISTING_AGE_DAYS / age_days, 3) if age_days else None,
+            "filter": "MAX_LISTING_AGE_DAYS", "actual": round(age_days, 1), "threshold": config.MAX_LISTING_AGE_DAYS,
+            "ratio_of_threshold": round(config.MAX_LISTING_AGE_DAYS / age_days, 3) if age_days else None,
         })
 
     return reasons, margins
@@ -97,10 +109,10 @@ def passes_hard_filters(token: dict) -> tuple[bool, list[str]]:
     return (len(reasons) == 0, reasons)
 
 
-def passes_hard_filters_with_margins(token: dict) -> tuple[bool, list[str], list[dict]]:
+def passes_hard_filters_with_margins(token: dict, *, config=settings, now=None) -> tuple[bool, list[str], list[dict]]:
     """Igual que passes_hard_filters, pero además devuelve el margen numérico de cada filtro
     que falló -- para poder mostrar "casi pasó los filtros" en vez de solo pasa/no pasa."""
-    reasons, margins = _evaluate_filters(token)
+    reasons, margins = _evaluate_filters(token, config=config, now=now)
     return (len(reasons) == 0, reasons, margins)
 
 

@@ -21,7 +21,7 @@ def amm_net(growth, entry_depth, exit_depth, ticket, fee):
     return 100*(exit_notional/(1+exit_notional/(exit_depth/2))/ticket-1)
 
 
-def summarize(entries, horizon, as_of, independent_prices=(), ticket=100., fee=.003):
+def summarize(entries, horizon, as_of, independent_prices=(), ticket=100., fee=.003, universe=False):
     entries = [dict(row) for row in entries]
     independent_prices = [dict(row) for row in independent_prices]
     costs, excess = defaultdict(list), defaultdict(list)
@@ -41,6 +41,8 @@ def summarize(entries, horizon, as_of, independent_prices=(), ticket=100., fee=.
         group = "alternativa"
         if first["shortlisted"]:
             group = {"ranked":"ranking","random":"sorteo"}.get(first.get("shadow_arm"),"preseleccionado") if first["run_id"].startswith("shadow-") else "preseleccionado"
+        if universe:
+            group = "todos_los_elegibles"
         chain = first["token_key"].split(":", 1)[0]
         values = groups[(chain, first["config_hash"], group)]
         target = deadline(first)
@@ -93,16 +95,46 @@ def valid_price(value):
 def inputs():
     with get_conn() as conn:
         rows = conn.execute("SELECT s.*, v.config_hash,b.btc_usdt FROM survivor_observations s LEFT JOIN observation_benchmarks b ON b.run_id=s.run_id "
-                            "JOIN run_versions v ON s.run_id=v.run_id ORDER BY s.observed_at, s.run_id").fetchall()
+                            "JOIN run_versions v ON s.run_id=v.run_id LEFT JOIN shadow_captures cap ON cap.run_id=s.run_id "
+                            "WHERE cap.run_id IS NULL OR cap.status IN ('captured','complete') ORDER BY s.observed_at, s.run_id").fetchall()
         independent = conn.execute("SELECT h.*,c.liquidity,c.btc_usdt FROM horizon_prices h LEFT JOIN horizon_context c ON c.token_key=h.token_key AND c.days=h.days AND c.observed_at=h.observed_at").fetchall()
     return rows, independent
+
+
+def coverage_status(rows, now):
+    """Catorce días UTC cerrados, con las dos capturas de calendario y cupos por cadena."""
+    sessions = defaultdict(list)
+    for row in rows:
+        day = datetime.fromisoformat(row["observed_at"]).astimezone(timezone.utc).date()
+        if row["event"] == "schedule":
+            sessions[day].append(row)
+    dates = []
+    for back in range(14, 0, -1):
+        day = now.date() - timedelta(days=back)
+        group = sessions[day]
+        valid = sum(1 for row in group if row["status"] in ("captured", "complete")
+                    and row["full_quota"] == 1 and row["feeds_ok"] == 1)
+        dates.append(dict(fecha=day.isoformat(), programadas=len(group), validas=valid,
+                          cumple=len(group) >= 2 and valid == len(group)))
+    streak = 0
+    for item in reversed(dates):
+        if not item["cumple"]:
+            break
+        streak += 1
+    return dict(dias_consecutivos=streak, objetivo_dias=14, cumple=streak == 14, fechas=dates)
 
 
 def publish_snapshot():
     rows, independent = inputs()
     now = datetime.now(timezone.utc)
     results = {str(days):summarize(rows,days,now,independent) for days in (7,30,90,180)}
+    results["universo_elegible"] = {str(days): summarize(rows, days, now, independent, universe=True)
+                                  for days in (7,30,90,180)}
     with get_conn() as db:
+        sessions = db.execute("SELECT observed_at,status,json_extract(payload,'$.event') AS event, "
+                              "json_extract(payload,'$.full_quota') AS full_quota, json_extract(payload,'$.feeds_ok') AS feeds_ok "
+                              "FROM shadow_captures WHERE observed_at>=?", ((now-timedelta(days=15)).isoformat(),)).fetchall()
+        results["cobertura"] = coverage_status(sessions, now)
         db.execute("INSERT INTO analytics_snapshots(kind,computed_at,payload) VALUES(?,?,?)",
                    ("shadow_cohorts",now.isoformat(),json.dumps(results,ensure_ascii=False)))
     return results

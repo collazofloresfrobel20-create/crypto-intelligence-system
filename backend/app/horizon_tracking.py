@@ -13,7 +13,8 @@ def capture(as_of=None, btc_usdt=None):
         with get_conn() as conn:
             rows = conn.execute(
                 "SELECT s.token_key, MIN(s.observed_at) AS first_seen "
-                "FROM survivor_observations s WHERE s.eligible=1 "
+                "FROM survivor_observations s LEFT JOIN shadow_captures cap ON s.run_id=cap.run_id "
+                "WHERE (cap.run_id IS NULL OR cap.status IN ('captured','complete')) AND s.eligible=1 "
                 "AND (s.token_key LIKE 'bsc:%' OR s.token_key LIKE 'solana:%') "
                 "AND NOT EXISTS (SELECT 1 FROM horizon_prices h WHERE h.token_key=s.token_key AND h.days=?) "
                 "GROUP BY s.token_key HAVING MIN(s.observed_at) BETWEEN ? AND ? ORDER BY first_seen",

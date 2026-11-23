@@ -37,16 +37,18 @@ def _get_json(url: str):
     return None
 
 
-def _get_pairs_batch(chain: str, addresses: list[str]) -> list[dict]:
+def _get_pairs_batch(chain: str, addresses: list[str], audit=None) -> list[dict]:
     """Hasta 30 direcciones por llamada (límite de la API). Devuelve la lista cruda de pares."""
     if not addresses:
         return []
     addr_str = ",".join(addresses[:BATCH_SIZE])
     data = _get_json(f"{BASE_URL}/tokens/v1/{chain}/{addr_str}")
+    if not isinstance(data, list) and audit is not None:
+        audit["errors"].append("pares: " + str(len(addresses)) + " contratos")
     return data if isinstance(data, list) else []
 
 
-def get_candidate_addresses(chain: str = "bsc") -> list[str]:
+def get_candidate_addresses(chain: str = "bsc", audit=None) -> list[str]:
     """Direcciones candidatas desde los feeds gratuitos de 'boosteados' + 'perfiles nuevos' de
     DexScreener, filtradas a `chain`. No es un universo completo como el listado curado de
     Binance Alpha (DexScreener no ofrece eso gratis sin una query) -- es lo que DexScreener
@@ -55,6 +57,8 @@ def get_candidate_addresses(chain: str = "bsc") -> list[str]:
     for path in ("/token-boosts/latest/v1", "/token-profiles/latest/v1"):
         data = _get_json(BASE_URL + path)
         if not isinstance(data, list):
+            if audit is not None:
+                audit["errors"].append(path)
             continue
         for item in data:
             if item.get("chainId") == chain and item.get("tokenAddress"):
@@ -94,6 +98,10 @@ def _to_token_dict(pair: dict) -> dict:
         "offline": False,
         "source": "dexscreener",
         "dexId": pair.get("dexId"),
+        "pairActivity": {"pair": pair.get("pairAddress"), "window_hours": 24,
+                         "buys": ((pair.get("txns") or {}).get("h24") or {}).get("buys"),
+                         "sells": ((pair.get("txns") or {}).get("h24") or {}).get("sells"),
+                         "volume_usd": volume24h, "liquidity_usd": liquidity},
     }
 
 
@@ -101,18 +109,18 @@ def _address_key(chain: str, address: str) -> str:
     return address.lower() if chain == "bsc" else address
 
 
-def get_universe(chain: str = "bsc") -> list[dict]:
+def get_universe(chain: str = "bsc", audit=None) -> list[dict]:
     """Universo de candidatos de DexScreener para esta cadena: direcciones descubiertas +
     su market data real (batch de hasta 30 por llamada), normalizado. Si un token tiene
     varios pares/pools, se queda con el de mayor liquidez."""
-    addresses = get_candidate_addresses(chain)
+    addresses = get_candidate_addresses(chain, audit=audit)
     if not addresses:
         return []
     by_address: dict[str, dict] = {}
     for i in range(0, len(addresses), BATCH_SIZE):
         batch = addresses[i:i + BATCH_SIZE]
         requested = {_address_key(chain, a) for a in batch}
-        for pair in _get_pairs_batch(chain, batch):
+        for pair in _get_pairs_batch(chain, batch, audit=audit):
             base = pair.get("baseToken") or {}
             addr = base.get("address")
             if pair.get("chainId") != chain or not addr or _address_key(chain, addr) not in requested:
