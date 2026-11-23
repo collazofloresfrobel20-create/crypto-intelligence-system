@@ -67,3 +67,9 @@ distintos analizados con resultado; comparación PAREADA sobre las mismas filas,
 veredicto por reglas no sea peor que el del Juez en "cerró >= +10%" ni en "cayó >= 20%" (IC95 por token
 que no lo dé por peor en ninguna de las dos). Hasta entonces no cambia ningún veredicto mostrado ni
 enviado a Telegram.
+
+### Estudio prospectivo de volumen y liquidez · registrado el 22 de noviembre de 2026
+
+Hipótesis en sombra. Una rotación de 24 horas elevada (volumen en USD dividido entre liquidez en USD) se asocia con mayor frecuencia de pérdidas de al menos 20% al cierre de siete días. Unidad: primer registro elegible en sombra de cada contrato nuevo. Inscripción del 24 de noviembre de 2026 UTC inclusive al 23 de enero de 2027 UTC exclusivo. Lectura final el 31 de enero UTC, tras la ventana adicional de 24 h de seguimiento. Un cierre terminal y un mínimo intradía son métricas diferentes. Las compras y ventas por pool quedan como datos descriptivos.
+
+Comparación entre los quintiles superior e inferior dentro de cada cadena, versión y tramo de liquidez inicial (<100 mil, 100 mil a <1 millón, ≥1 millón USD). Los cortes incluyen empates y excluyen estratos sin extremos distintos. El riesgo relativo pondera cada estrato por el menor tamaño de sus extremos. El AUC compara pares dentro del estrato. Intervalo percentil del 95% con 500 remuestreos por bloques semanales de entrada y semilla fija. Se exigen al menos ocho semanas representadas y 490 remuestreos calculables. La comparación queda indeterminada si falta un denominador válido. En el escenario adverso, cada cierre ausente se asigna contra la hipótesis. Pasa a revisión humana si RR ≥1.5, límite inferior del IC >1, AUC ≥0.58 y RR adverso ≥1.5. La decisión sobre pesos queda separada de la evaluación estadística. El resumen se publica automáticamente en el campo estudio_volumen de shadow_cohorts.

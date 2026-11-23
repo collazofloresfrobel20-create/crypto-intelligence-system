@@ -128,6 +128,8 @@ def publish_snapshot():
     rows, independent = inputs()
     now = datetime.now(timezone.utc)
     results = {str(days):summarize(rows,days,now,independent) for days in (7,30,90,180)}
+    from app import volume_study
+    results["estudio_volumen"] = volume_study.evaluate(rows, independent, now)
     results["universo_elegible"] = {str(days): summarize(rows, days, now, independent, universe=True)
                                   for days in (7,30,90,180)}
     with get_conn() as db:
