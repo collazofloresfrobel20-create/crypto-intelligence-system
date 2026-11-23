@@ -324,3 +324,20 @@ cloudflare/config.yml      Plantilla de Cloudflare Tunnel (enfoque anterior, ya 
   `backend/.env`.
 - El scheduler automático vive en el mismo proceso del servidor: si reinicias el servidor, el
   contador de `AUTO_UPDATE_INTERVAL_HOURS` vuelve a empezar desde cero (arranca ~60s después).
+
+### Auditoría de la captura en sombra
+
+Historial muestra el primer registro elegible de cada contrato, agrupado por cadena, versión y horizonte. El sorteo elige entre los contratos restantes después de asignar los cupos por ranking. La fila «Total elegible» incluye los tres grupos y sirve como referencia descriptiva. La racha operacional cuenta días UTC terminados con al menos dos corridas programadas completas, ambos cupos cubiertos y respuestas de las tres fuentes. Una ejecución manual sirve para verificar el sistema y queda fuera de la racha.
+
+El colector guarda el universo que realmente observó, las fuentes consultadas, los umbrales, las razones de descarte y la selección por contrato. Un fallo tras congelar el universo se puede reintentar con el mismo identificador de GitHub. El trabajo recupera los expedientes pendientes. Las corridas históricas anteriores a este formato conservan sus resultados originales.
+
+Desde `backend`, con el entorno de CIS configurado, estas consultas solo leen la base:
+
+```shell
+python scripts/replay_filters.py shadow-gh-45096353928
+python scripts/replay_filters.py shadow-gh-45096353928 --set MIN_LIQUIDITY_USD=100000 --days 7
+```
+
+El segundo comando identifica contratos que habrían entrado o salido y resume el primer precio positivo disponible en las capturas archivadas durante las 24 horas posteriores al horizonte. Reporta cuántos tienen precio, cuántos siguen inmaduros y cuántos carecen de cierre. Los contratos que desaparecen del feed pueden estar sobrerrepresentados entre los faltantes. La variación bruta mide el cierre observado. El máximo recorrido intradía requiere otra serie de datos.
+
+La ficha de proyecto puede quedar en disputa cuando la evaluación documental de producto y el uso observado se contradicen. Para una evaluación fuerte se requiere también una revisión de `captura_de_valor` con nivel ≥75, fuente doble, explicación, observable e invalidación. Los niveles son escalones de la rúbrica experimental. Las citas se contrastan con el texto y las fechas de los artículos. La independencia editorial y el sentido de cada cita requieren juicio del revisor.

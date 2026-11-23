@@ -11,7 +11,7 @@ concurrency:
 jobs:
   capture:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 22
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,7 +21,13 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
         working-directory: backend
-      - run: python scripts/capture_public.py
+      - name: Capturar y recuperar un fallo transitorio
+        shell: bash
+        run: |
+          if ! timeout 8m python scripts/capture_public.py; then
+            sleep 15
+            timeout 8m python scripts/capture_public.py
+          fi
         working-directory: backend
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
