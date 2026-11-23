@@ -92,7 +92,11 @@ def corroborate(dossier, criterion, item):
         return None
     articles = {a.get("url"): a for a in dossier.get("news", {}).get("leads", [])
                 if a.get("status") == "contract_mentioned" and a.get("text") and a.get("publisher")}
-    sources = set()
+    from .news_evidence import publication_time
+    cutoff = publication_time(dossier.get("retrieved_at"))
+    if cutoff is None:
+        return None
+    sources, bodies, quotes = set(), set(), set()
     for citation in item.get("citations", []):
         if not isinstance(citation, dict):
             return None
@@ -100,6 +104,16 @@ def corroborate(dossier, criterion, item):
         quote = citation.get("quote")
         if not doc or not isinstance(quote,str) or len(quote.strip()) < 20 or quote not in doc["text"]:
             return None
+        published = publication_time(doc.get("published_at"))
+        read_at = publication_time(doc.get("read_at"))
+        if published is None or read_at is None or not published <= read_at <= cutoff:
+            return None
+        body_id = " ".join(doc["text"].casefold().split())
+        quote_id = " ".join(quote.casefold().split())
+        if body_id in bodies or quote_id in quotes:
+            continue
+        bodies.add(body_id)
+        quotes.add(quote_id)
         sources.add(doc["publisher"])
     if len(sources) < 2 or item.get("independence_reviewed") is not True:
         return None

@@ -1,6 +1,7 @@
 """Noticias como pistas. Solo lee dominios de medios definidos en código."""
 import re
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree
@@ -69,15 +70,40 @@ class ArticleText(HTMLParser):
             self.chunks.append(data)
 
 
+def publication_time(raw):
+    if not isinstance(raw, str):
+        return None
+    try:
+        stamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            stamp = parsedate_to_datetime(raw)
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return stamp if stamp.tzinfo is not None else None
+
+
+def matching_articles(entries, pattern, now):
+    grouped = {}
+    for entry in entries:
+        published = publication_time(entry.get("published_at"))
+        if not pattern.search(entry["title"]) or published and published > now:
+            continue
+        grouped.setdefault(entry["publisher"], []).append((published or datetime.min.replace(tzinfo=timezone.utc), entry))
+    for group in grouped.values():
+        group.sort(key=lambda pair: pair[0], reverse=True)
+    first = sorted((group[0] for group in grouped.values()), key=lambda pair: pair[0], reverse=True)
+    rest = sorted((pair for group in grouped.values() for pair in group[1:]), key=lambda pair: pair[0], reverse=True)
+    return [entry for _, entry in (first + rest)[:2]]
+
+
 def investigate(token, index):
     name = str(token.get("name") or "").strip()
     result = {"feed_coverage": index["feeds"], "leads": []}
     if len(name) < 3:
         return result
     pattern = re.compile(r"(?<!\w)" + re.escape(name) + r"(?!\w)", re.IGNORECASE)
-    for item in index["entries"]:
-        if not pattern.search(item["title"]):
-            continue
+    for item in matching_articles(index["entries"], pattern, datetime.now(timezone.utc)):
         lead = dict(item, read_at=datetime.now(timezone.utc).isoformat(), status="headline_only")
         try:
             parser = ArticleText()
@@ -92,6 +118,4 @@ def investigate(token, index):
         except (requests.RequestException, ValueError) as exc:
             lead["error"] = type(exc).__name__
         result["leads"].append(lead)
-        if len(result["leads"]) >= 2:
-            break
     return result
