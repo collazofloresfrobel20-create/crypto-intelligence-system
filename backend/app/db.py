@@ -24,6 +24,16 @@ TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "")
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS portfolio_paths (
+    prediction_id INTEGER PRIMARY KEY, checked_at TEXT NOT NULL,
+    finished INTEGER NOT NULL DEFAULT 0, bars TEXT NOT NULL, error TEXT
+);
+CREATE TABLE IF NOT EXISTS portfolio_quotes (
+    token_key TEXT NOT NULL, observed_at TEXT NOT NULL, price REAL NOT NULL,
+    pool TEXT, slot TEXT NOT NULL, PRIMARY KEY(token_key,slot)
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_quotes_key_time ON portfolio_quotes(token_key,observed_at);
+CREATE INDEX IF NOT EXISTS idx_portfolio_paths_checked ON portfolio_paths(finished,checked_at);
 CREATE TABLE IF NOT EXISTS horizon_context (
     token_key TEXT NOT NULL, days INTEGER NOT NULL, observed_at TEXT NOT NULL,
     liquidity REAL, btc_usdt REAL, PRIMARY KEY(token_key,days)
@@ -51,6 +61,12 @@ CREATE TABLE IF NOT EXISTS horizon_prices (
 CREATE TABLE IF NOT EXISTS shadow_captures (
     run_id TEXT PRIMARY KEY, observed_at TEXT NOT NULL, version TEXT NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('pending','captured','complete')), payload TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS search_archive (
+    token_key TEXT NOT NULL, eligible INTEGER NOT NULL, observed_at TEXT NOT NULL,
+    run_id TEXT NOT NULL, symbol TEXT, name TEXT, reasons TEXT,
+    first_at TEXT NOT NULL, first_price REAL, last_price REAL,
+    PRIMARY KEY(token_key,eligible)
 );
 CREATE TABLE IF NOT EXISTS run_versions (
     run_id TEXT PRIMARY KEY, config_hash TEXT NOT NULL

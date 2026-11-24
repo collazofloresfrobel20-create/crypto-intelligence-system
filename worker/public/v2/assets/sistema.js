@@ -170,7 +170,7 @@ function renderPredictions(preds) {
     return `
     <article class="card" tabindex="-1" id="card-${p.id}">
       <div class="card-head">
-        <div><span class="sym">${p.symbol || "?"}</span><span class="name">${p.name || ""}</span><span class="pill-inline">${p.source === "dexscreener" ? "DexScreener" : "Binance Alpha"}</span></div>
+        <div><span class="sym">${p.symbol || "?"}</span><span class="name">${p.name || ""}</span><span class="pill-inline">${networkLabel(p.chain_name)} · ${p.source === "dexscreener" ? "DexScreener" : "Binance Alpha"}</span></div>
         <div class="card-head-right">
           <span class="badge ${vclass}">${p.verdict || "N/A"}</span>
           ${statusPill(p)}
@@ -207,8 +207,22 @@ function renderPredictions(preds) {
         <div class="timeline-wrap">${candidateTimeline(p)}</div>
         <div class="timeline-caption">Retorno máximo: ${p.max_return_pct}% &middot; Caída máxima: ${p.max_drawdown_pct != null ? p.max_drawdown_pct + "%" : "sin dato"} &middot; Retorno al día ${p.horizon_days}: ${p.return_pct}% &middot; Tesis: ${p.thesis_result}</div>
       ` : `<div class="section-title">Estado</div><div class="text-block faint">Pendiente de evaluar (horizonte ${p.horizon_days} días)</div>`}
+      <div class="case-actions">${networkLink(p)} <button type="button" class="light-button" data-paper="${p.id}">Simular estrategias</button></div>
     </article>`;
   }).join("");
+  el.querySelectorAll("[data-paper]").forEach(button=>button.onclick=()=>{
+    const p=preds.find(row=>String(row.id)===button.dataset.paper);
+    const chain=networkKey(p.chain_name), addr=p.contract_address || "";
+    goToView("cartera");
+    window.dispatchEvent(new CustomEvent("cis:paper-position",{detail:{id:p.id,symbol:p.symbol,chain,token_key:chain+":"+(chain==="bsc"?addr.toLowerCase():addr),verdict:p.verdict,entry_at:p.created_at}}));
+  });
+  bindFind(el,preds);
+}
+function bindFind(el,rows) {
+  el.querySelectorAll("[data-find]").forEach(button=>button.onclick=()=>{
+    const row=rows.find(r=>String(r.id)===button.dataset.find);
+    if(row && window.cisFindToken) window.cisFindToken(row.contract_address || row.symbol,networkKey(row.chain_name));
+  });
 }
 
 const SOURCE_LABEL = { market_klines: "klines de precio de Binance", security_goplus: "reporte de seguridad de GoPlus" };
@@ -256,15 +270,16 @@ function renderDiscarded(rows, total) {
         const margins = Array.isArray(r.rejection_margins) ? r.rejection_margins : [];
         const missed = r.status === 'evaluated' && (r.max_return_pct ?? 0) >= 20;
         return `<tr>
-          <td><strong>${r.symbol}</strong></td>
+          <td><strong>${r.symbol}</strong><small class="source-sub">${networkLabel(r.chain_name)} · ${esc(String(r.created_at||"").slice(0,10))}</small>${networkLink(r)}</td>
           <td>${reasons.map(x => `<span class="pill-inline">${x}</span>`).join("")}${wasNearMiss(margins) ? '<span class="pill-inline">Casi pasó los filtros</span>' : ""}</td>
           <td>${DISCARDED_STATUS_LABEL[r.status] || r.status}</td>
-          <td>${r.status === 'evaluated' ? r.max_return_pct + '%' : '-'}</td>
-          <td>${r.status === 'evaluated' ? (missed ? 'Sí' : 'No') : '-'}</td>
+          <td>${r.status === 'evaluated' && r.max_return_pct != null ? r.max_return_pct + '%' : 'Sin dato'}</td>
+          <td>${r.status === 'evaluated' && r.max_return_pct != null ? (missed ? 'Sí' : 'No') : 'Pendiente de dato'}</td>
         </tr>`;
       }).join("")}
     </tbody>
   </table></div>`;
+  bindFind(el,rows);
 }
 
 const VERDICT_ORDER = ["Strong Opportunity", "Watchlist", "High Risk / Speculative", "Insufficient Evidence", "Reject"];
@@ -275,6 +290,33 @@ const STATUS_OPTIONS = [
 ];
 
 let allPredictions = [];
+let networkScope = "both";
+try { const saved = sessionStorage.getItem("cis.network"); if(["both","bsc","solana","all"].includes(saved)) networkScope = saved; } catch {}
+$("networkScope").value = networkScope;
+function networkKey(value) {
+  const name = String(value || "").trim().toLowerCase();
+  if(["bnb","bnb chain","bnb smart chain","binance smart chain","56","bsc"].includes(name)) return "bsc";
+  return name==="sol" ? "solana" : name;
+}
+function networkLabel(value) {
+  const key = networkKey(value);
+  return key==="bsc" ? "BNB Smart Chain" : key==="solana" ? "Solana" : value || "Red desconocida";
+}
+function networkLink(p) {
+  const key=networkKey(p.chain_name);
+  return ["bsc","solana"].includes(key) ? '<button type="button" class="light-button" data-find="'+p.id+'">Consultar historial del token</button>' : "";
+}
+$("rankQuery").addEventListener("input",renderFiltered);
+$("networkScope").addEventListener("change",()=>{
+  networkScope=$("networkScope").value;
+  try { sessionStorage.setItem("cis.network",networkScope); } catch {}
+  allPredictions=[]; renderFiltered(); renderStatusFilters(); renderVerdictFilters();
+  $("overviewMetrics").replaceChildren(); $("overviewPicks").replaceChildren(); $("overviewVerdicts").replaceChildren(); $("opportunityMap").replaceChildren(); $("discardedTable").replaceChildren();
+  $("selectionNote").textContent="Cargando la red elegida…";
+  $("networkCounts").textContent="Cargando…";
+  visited.delete("summary"); visited.delete("descartados");
+  loadView(location.hash.slice(1) || "resumen");
+});
 let verdictFilter = null;  // null = todos
 let statusFilter = "active";   // por defecto solo lo vigente -- "Todos" mezcla 13 días de historial cerrado
 
@@ -296,8 +338,10 @@ function applyFilters(list) {
 
 function renderFiltered() {
   const filtered = applyFilters(allPredictions);
-  renderRanking(filtered);
-  renderScoreComparison(filtered);
+  const q=$("rankQuery").value.trim().toLowerCase();
+  const ranked=filtered.filter(p=>!q || [p.symbol,p.name,p.contract_address].some(v=>String(v||"").toLowerCase().includes(q)));
+  renderRanking(ranked);
+  renderScoreComparison(ranked);
   renderPredictions(filtered);
 }
 
@@ -366,7 +410,7 @@ function renderRanking(list) {
   };
   box.innerHTML = `<div class="table-wrap" tabindex="0" aria-label="Ranking de candidatos"><table class="ranking-table">
     <thead><tr>
-      <th>#</th><th>Símbolo</th><th>Fuente</th><th>Veredicto</th>
+      <th>#</th><th>Símbolo</th><th>Red / fuente</th><th>Veredicto</th>
       ${RANK_SORT_OPTIONS.map(([k, l]) => headerCell(k, l)).join("")}
       <th>Estado</th><th>Resultado (real o en vivo)</th>
     </tr></thead>
@@ -375,7 +419,7 @@ function renderRanking(list) {
         <tr data-goto="card-${p.id}">
           <td class="faint">${i + 1}</td>
           <td><button class="token-link" aria-label="Ver análisis de ${p.symbol}">${p.symbol || "?"}</button></td>
-          <td class="muted">${p.source === "dexscreener" ? "DexScreener" : "Binance Alpha"}</td>
+          <td>${networkLabel(p.chain_name)}<small class="source-sub">${p.source === "dexscreener" ? "DexScreener" : "Binance Alpha"}</small></td>
           <td><span class="badge ${VERDICT_CLASS[p.verdict] || "v-insufficient"}">${p.verdict || "N/A"}</span></td>
           <td>${p.opportunity_score ?? "-"}</td>
           <td>${p.risk_score ?? "-"}</td>
@@ -404,9 +448,10 @@ function renderRanking(list) {
 }
 
 async function refreshPredictions() {
-  const preds = await api("/api/predictions?category=analyzed&compact=1&limit=200");
+  const scope=networkScope;
+  const preds = await api("/api/predictions?category=analyzed&compact=1&limit=200&network="+scope);
+  if(scope!==networkScope) return [];
   allPredictions = preds;
-  renderOutcomeChart(preds);
   renderStatusFilters();
   renderVerdictFilters();
   renderFiltered();
@@ -416,10 +461,12 @@ async function refreshPredictions() {
 const DISCARDED_TABLE_LIMIT = 300;
 
 async function refreshDiscarded() {
+  const scope=networkScope;
   const [rows, countResp] = await Promise.all([
-    api(`/api/predictions?category=discarded&compact=1&limit=${DISCARDED_TABLE_LIMIT}`),
-    api("/api/predictions/count?category=discarded").catch(() => null),
+    api(`/api/predictions?category=discarded&compact=1&limit=${DISCARDED_TABLE_LIMIT}&network=${scope}`),
+    api("/api/predictions/count?category=discarded&network="+scope).catch(() => null),
   ]);
+  if(scope!==networkScope) return;
   renderDiscarded(rows, countResp ? countResp.count : rows.length);
   return { rows, total: countResp ? countResp.count : rows.length };
 }
@@ -441,7 +488,12 @@ function relativeTime(iso) {
 
 
 async function refreshSummary() {
- const [analyzed,discarded,runs] = await Promise.all([refreshPredictions(),api("/api/predictions/count?category=discarded"),api("/api/runs")]);
+ const scope=networkScope;
+ const [analyzed,discarded,runs] = await Promise.all([refreshPredictions(),api("/api/predictions/count?category=discarded&network="+scope),api("/api/runs")]);
+ if(scope!==networkScope) return;
+ const counts={};
+ for(const row of analyzed){const name=networkLabel(row.chain_name);counts[name]=(counts[name]||0)+1;}
+ $("networkCounts").textContent=analyzed.length ? "Análisis cargados · "+Object.entries(counts).map(([k,n])=>k+" "+n).join(" / ") : "Sin análisis en esta red";
  drawOverview(analyzed,discarded.count,runs[0]);
  renderOpportunityMap(analyzed.filter(isActive));
 }
@@ -809,9 +861,11 @@ function once(key, action) {
   }));
 }
 function loadView(key) {
-  if(["resumen","ranking","oportunidades","historial"].includes(key)) once("summary",refreshSummary);
+  const scoped=["resumen","ranking","oportunidades","descartados"].includes(key);
+  $("networkBar").hidden=!scoped;
+  if(scoped) once("summary",refreshSummary);
   if(key==="descartados") once(key,refreshDiscarded);
-  if(key==="historial") once(key,async()=>{await Promise.all([loadCohorts(),api("/api/history/overview").then(renderHistory)]);});
+  if(key==="historial") once(key,async()=>{await Promise.all([loadCohorts(),api("/api/history/overview").then(renderHistory),api("/api/predictions?category=analyzed&compact=1&limit=200").then(renderOutcomeChart)]);});
   if(key==="autocorreccion") once(key,async()=>{await Promise.all([api("/api/backtest/stats").then(renderStats),api("/api/backtest/filter-efficacy").then(renderEfficacy),loadEdge(),loadDiagnosis()]);});
   if(key==="configuracion") once(key,loadConfig);
   if(key==="metodologia") $("pipelineDiagram").innerHTML=renderPipelineDiagram();

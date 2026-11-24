@@ -1,3 +1,5 @@
+import { tokenSearch } from "./token-search.js";
+import { getPortfolio } from "./portfolio.js";
 import { researchApi, requestResearch, requestJudges } from "./research.js";
 import { getDb, rowWithJson } from "./db.js";
 import * as auth from "./auth.js";
@@ -182,10 +184,22 @@ async function handleLogin(request, env) {
   });
 }
 
+function predictionNetwork(raw) {
+  const bsc = "'bsc','bnb','bnb chain','bnb smart chain','binance smart chain','56'";
+  const sol = "'sol','solana'";
+  const sets = {bsc, solana: sol, both: bsc+","+sol};
+  return Object.hasOwn(sets,raw) ? " AND lower(trim(chain_name)) IN ("+sets[raw]+")" : "";
+}
+
 async function handleApi(path, request, env) {
   const db = getDb(env);
   const url = new URL(request.url);
 
+  if(path==="/api/v2/search" && request.method==="GET") return tokenSearch(db,url);
+  if(path==="/api/v2/portfolio" && request.method==="GET") {
+    try { return json(await getPortfolio(db,url)); }
+    catch (err) { if(err instanceof RangeError) return json({detail:err.message},400); throw err; }
+  }
   if(path==="/api/v2/judges" && request.method==="POST") return requestJudges(db,request,env);
   if(path==="/api/v2/judges" && request.method==="GET"){
     const job=await db.one("SELECT status FROM judge_requests WHERE id=?",[url.searchParams.get("id")]);
@@ -225,22 +239,22 @@ async function handleApi(path, request, env) {
     const runId = url.searchParams.get("run_id");
     const limit = parseInt(url.searchParams.get("limit") || "200", 10);
     const compact = url.searchParams.get("compact") === "1";
-    const cols = compact ? (category === "discarded" ? "id,symbol,status,created_at,max_return_pct,rejection_margins,rejection_reasons" :
-      "id,symbol,name,source,status,created_at,verdict,project_explainer,opportunity_score,risk_score,confidence_score,earliness_score,confidence_score_calibrated,confidence_score_capped,price_at_prediction,price_after,current_price,current_return_pct,return_pct,return_at_day1_pct,return_at_day3_pct,max_drawdown_pct,max_return_pct,horizon_days,volatility_pct,secondary_judge_verdict,judge_agreement,key_evidence,main_risks,system_note,bull_case,bear_case,top10_holder_concentration_pct,creator_percent,owner_percent,lp_holders_locked_pct,is_honeypot,is_mintable,premortem_failure_modes,premortem_risk,movement_context,data_quality,mediator_contradictions_count,thesis_result") : "*";
+    const cols = compact ? (category === "discarded" ? "id,symbol,name,chain_name,contract_address,status,created_at,max_return_pct,rejection_margins,rejection_reasons" :
+      "id,symbol,name,chain_name,contract_address,source,status,created_at,verdict,project_explainer,opportunity_score,risk_score,confidence_score,earliness_score,confidence_score_calibrated,confidence_score_capped,price_at_prediction,price_after,current_price,current_return_pct,return_pct,return_at_day1_pct,return_at_day3_pct,max_drawdown_pct,max_return_pct,horizon_days,volatility_pct,secondary_judge_verdict,judge_agreement,key_evidence,main_risks,system_note,bull_case,bear_case,top10_holder_concentration_pct,creator_percent,owner_percent,lp_holders_locked_pct,is_honeypot,is_mintable,premortem_failure_modes,premortem_risk,movement_context,data_quality,mediator_contradictions_count,thesis_result") : "*";
     let sql = "SELECT "+cols+" FROM predictions WHERE category = ?";
     const args = [category];
     if (runId) {
       sql += " AND run_id = ?";
       args.push(runId);
     }
-    sql += " ORDER BY created_at DESC LIMIT ?";
+    sql += predictionNetwork(url.searchParams.get("network")) + " ORDER BY created_at DESC, id DESC LIMIT ?";
     args.push(limit);
     const rows = await db.all(sql, args);
     return json(rows.map(rowWithJson));
   }
   if (path === "/api/predictions/count" && request.method === "GET") {
     const category = url.searchParams.get("category") || "analyzed";
-    const row = await db.one("SELECT COUNT(*) as n FROM predictions WHERE category = ?", [category]);
+    const row = await db.one("SELECT COUNT(*) as n FROM predictions WHERE category = ?" + predictionNetwork(url.searchParams.get("network")), [category]);
     return json({ category, count: row ? row.n : 0 });
   }
 

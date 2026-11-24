@@ -30,10 +30,15 @@ export async function requestResearch(db, request, env) {
   const now=new Date(), since = ms => new Date(now.getTime()-ms).toISOString();
   const cached=await db.one("SELECT run_id FROM research_dossiers WHERE token_key=? AND julianday(read_at)>=julianday(?) ORDER BY read_at DESC LIMIT 1",[key,since(7*86400000)]);
   if (cached) return Response.json({status:"done",result_run:cached.run_id,token_key:key});
-  const existing=await db.one("SELECT * FROM research_requests WHERE token_key=? AND status IN ('queued','running') AND julianday(created_at)>=julianday(?) ORDER BY created_at DESC LIMIT 1",[key,since(1200000)]);
-  if (existing) return Response.json(existing);
+  const active="SELECT * FROM research_requests WHERE token_key=? AND status IN ('queued','running') AND julianday(created_at)>=julianday(?)";
+  const cutoff=since(1200000);
   const id=crypto.randomUUID();
-  await db.run("INSERT INTO research_requests (id,token_key,created_at,status) VALUES(?,?,?,'queued')",[id,key,now.toISOString()]);
+  const inserted=await db.run("INSERT INTO research_requests (id,token_key,created_at,status) SELECT ?,?,?,'queued' WHERE NOT EXISTS ("+active+")",
+    [id,key,now.toISOString(),key,cutoff]);
+  if (!inserted.rowsAffected) {
+    const existing=await db.one("SELECT * FROM research_requests WHERE token_key=? AND julianday(created_at)>=julianday(?) ORDER BY created_at DESC LIMIT 1",[key,cutoff]);
+    return existing ? Response.json(existing) : Response.json({detail:"Vuelve a consultar el contrato."},{status:409});
+  }
   try { await dispatchUpdateWorkflow(env,id); }
   catch { await db.run("UPDATE research_requests SET status='error',error=? WHERE id=?",["No se pudo iniciar el workflow",id]);return Response.json({detail:"No se pudo iniciar la investigación"},{status:503}); }
   return Response.json({id,status:"queued",token_key:key});

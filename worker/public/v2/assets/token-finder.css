@@ -1,0 +1,37 @@
+#token-finder {max-width:72rem;margin-inline:auto}
+.finder-head {display:block;border:0;padding:0;margin:0 0 1.25rem}
+.finder-head h1 {margin:0;color:var(--ink,#172c20);font-size:clamp(2rem,4vw,3.25rem);line-height:1.04}
+.finder-head p,.finder-status {color:#506255;font-size:.94rem;line-height:1.5}
+.finder-form {display:grid;grid-template-columns:minmax(10rem,1fr) minmax(8rem,12rem) auto;align-items:end;gap:.8rem;margin:1rem 0 2rem}
+.finder-form label {min-width:0}
+#token-finder .finder-form input,#token-finder .finder-form select {width:100%;min-height:2.9rem}
+#token-finder .finder-submit,.finder-dialog .finder-action {min-height:2.9rem;background:#234332;border:1px solid #234332;border-radius:7px;color:#fff;font:inherit;font-weight:650;padding:.55rem 1rem;cursor:pointer}
+#token-finder .finder-list-head {margin:0;font-size:1.4rem}
+.finder-status {margin:.35rem 0 1rem}
+#token-finder .finder-row {width:100%;display:grid;grid-template-columns:minmax(7rem,1fr) minmax(8rem,1fr) minmax(8rem,1.5fr) auto;align-items:center;gap:.8rem;text-align:left;padding:1rem .45rem;border:0;border-bottom:1px solid #d7dfd9;border-radius:0;background:transparent}
+#token-finder .finder-row:hover {background:#eff4ed}
+.finder-row-title,.finder-row-meta {display:grid;gap:.2rem;min-width:0;overflow-wrap:anywhere}
+.finder-row small {color:#526456;font-size:.82rem}
+.finder-row code,.finder-body>code {display:block;color:#44584b;overflow-wrap:anywhere;font-size:.78rem}
+.finder-open {font-weight:650;color:#315a40}
+.finder-dialog {position:fixed;inset:0;margin:auto;width:min(42rem,calc(100% - 2rem));max-height:86dvh;border:1px solid #a9b9ae;border-radius:12px;padding:0;background:#fcfdf9;color:#203528;box-shadow:0 1rem 4rem #16352133;overflow:auto;overscroll-behavior:contain}
+.finder-dialog::backdrop {background:#18271f82}
+.finder-dialog>header {position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.75rem 1.25rem;background:#f4f7f1;border-bottom:1px solid #d3ded3;font-size:.88rem;z-index:1}
+.finder-back,.finder-dossier button {font:inherit;font-weight:600;background:#fff;border:1px solid #adbcaf;border-radius:6px;min-height:2.7rem;padding:.4rem .8rem;color:#294a33;cursor:pointer}
+.finder-body {padding:1.2rem clamp(1rem,4vw,2rem) 2rem;overflow-wrap:anywhere}
+.finder-body h2 {margin:0;font-size:2rem;line-height:1.1}
+.finder-body h3 {font-size:1.27rem;margin:.4rem 0}
+.finder-body h4 {font-size:.98rem;margin:.7rem 0 .25rem}
+.finder-body p {line-height:1.5;margin:.45rem 0}
+.finder-section {border-top:1px solid #d2ded3;margin-top:1.1rem;padding-top:.8rem}
+.finder-dossier {margin-top:.6rem}
+.finder-dossier:empty {display:none}
+.finder-dossier button:disabled {opacity:.6}
+@media (max-width:720px) {
+  .finder-form {grid-template-columns:1fr auto;gap:.7rem}
+  .finder-form label:first-child {grid-column:1/-1}
+  #token-finder .finder-row {grid-template-columns:minmax(0,1fr) auto;gap:.4rem}
+  .finder-row .finder-row-meta {text-align:right}
+  .finder-dialog {width:100%;max-height:90dvh;margin:auto 0 0;border-radius:12px 12px 0 0;padding-bottom:env(safe-area-inset-bottom)}
+  .finder-dialog>header {padding:.6rem 1rem}
+}

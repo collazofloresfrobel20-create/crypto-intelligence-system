@@ -1,6 +1,7 @@
 """Backtesting continuo (spec sección 8), extendido para cubrir tanto los tokens analizados
 (pasaron los hard filters + research LLM) como los descartados (rechazados por hard filters),
 de forma que el sistema pueda auto-evaluar si sus propios filtros están bien calibrados."""
+import math
 import statistics
 from datetime import datetime, timezone
 
@@ -20,37 +21,41 @@ def _hours_since(iso_ts: str) -> float:
     return (datetime.now(timezone.utc) - dt).total_seconds() / 3600
 
 
-def _price_path_since(alpha_id: str, created_at: str) -> list[tuple[float, float]] | None:
+def _price_path_since(alpha_id: str, created_at: str, horizon_days: int | None = None) -> list[tuple[float, float]] | None:
     """Devuelve lista de (horas_desde_creacion, close_price) o None si no se pudo obtener."""
+    created_ms = datetime.fromisoformat(created_at).timestamp() * 1000
+    cutoff = datetime.now(timezone.utc).timestamp() * 1000
+    if horizon_days is not None:
+        cutoff = min(cutoff, created_ms + horizon_days * 86_400_000)
     try:
-        klines = binance_alpha.get_klines(alpha_id + "USDT", interval="1h", limit=400)
+        klines = binance_alpha.get_klines(alpha_id + "USDT", interval="1h",
+                                         limit=400 if horizon_days is None else min(1000, 24*horizon_days+2),
+                                         end_time_ms=int(cutoff))
     except Exception:
         return None
     if not klines:
         return None
 
-    created_dt = datetime.fromisoformat(created_at)
-    created_ms = created_dt.timestamp() * 1000
 
     path = []
     for k in klines:
-        open_time_ms = float(k[0])
-        close_time_ms = float(k[6])
-        if close_time_ms < created_ms:
-            continue  # vela que ya cerró antes de la predicción: irrelevante
-        close_price = float(k[4])
-        hours = max((open_time_ms - created_ms) / (1000 * 3600), 0)
+        try:
+            close_time_ms, close_price = float(k[6]), float(k[4])
+        except (IndexError, ValueError, TypeError):
+            continue
+        if not created_ms < close_time_ms <= cutoff or not math.isfinite(close_price) or close_price <= 0:
+            continue
+        hours = (close_time_ms-created_ms)/3_600_000
         path.append((hours, close_price))
-    return path or None
+    return sorted(path) or None
 
 
 def _price_at_hours(path: list[tuple[float, float]], target_hours: float) -> float | None:
     """Precio del punto del path más cercano a target_hours sin pasarse (None si el path
     todavía no llega tan lejos). Reusa el mismo path ya descargado, sin llamadas extra."""
     candidates = [p for p in path if p[0] <= target_hours]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda p: p[0])[1]
+    point = max(candidates, default=None, key=lambda p: p[0])
+    return point[1] if point and target_hours-point[0] <= 1 else None
 
 
 def _realized_volatility_pct(entry_price: float, path: list[tuple[float, float]]) -> float:
@@ -81,8 +86,9 @@ def evaluate_prediction(pred: dict) -> dict | None:
     if not alpha_id or not entry_price:
         return None
 
-    path = _price_path_since(alpha_id, pred["created_at"])
-    if not path:
+    horizon = int(pred.get("horizon_days") or 7)
+    path = _price_path_since(alpha_id, pred["created_at"], horizon)
+    if not path or horizon*24-path[-1][0] >= 1:
         return None
 
     price_after = path[-1][1]
@@ -230,6 +236,8 @@ def evaluate_prediction_polled(pred: dict) -> dict | None:
     chain, address = pred.get("chain_name"), pred.get("contract_address")
     entry_price = pred.get("price_at_prediction")
     if not chain or not address or not entry_price:
+        return None
+    if _hours_since(pred["created_at"]) > 24 * (int(pred.get("horizon_days") or 7) + 1):
         return None
     current_price = dexscreener.get_current_price(chain, address)
     if current_price is None:

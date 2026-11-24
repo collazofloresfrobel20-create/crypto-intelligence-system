@@ -77,7 +77,7 @@ const lineColors=["#2e6b49","#956134","#626c98","#397f84"];
 function renderOutcomeChart(all) {
   const host=document.getElementById("outcomeChart");
   const closed=all.filter(p=>p.status==="evaluated"&&numberAvailable(p.return_pct)).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,4);
-  host.innerHTML='<div class="chart-title-row"><div><h3>Trayectoria del rendimiento</h3><small>Variación desde el precio al análisis</small></div></div>';
+  host.innerHTML='<div class="chart-title-row"><div><h3>Últimos análisis con cierre</h3><small>Hasta cuatro casos recientes con retorno registrado entre los últimos 200 análisis de todas las redes. Cada curva parte del precio al analizar el token</small></div></div>';
   if(!closed.length){host.insertAdjacentHTML("beforeend",noChart("Aún no hay candidatos con un cierre registrado."));return;}
   const ids=new Set(closed.map(p=>p.id));
   const controls=document.createElement("div");controls.className="series-switch";controls.setAttribute("role","group");controls.setAttribute("aria-label","Series visibles");

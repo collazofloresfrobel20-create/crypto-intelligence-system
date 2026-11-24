@@ -1,5 +1,6 @@
 "use strict";
 const glyphs = {
+ search:"M16 16l5 5 M18 10a8 8 0 1 1-16 0a8 8 0 0 1 16 0",wallet:"M3 7h18v12H3z M3 7V5l14-3v5 M16 11h5v5h-5z",
  grid:"M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
  rank:"M4 20h16 M6 16V9 M12 16V4 M18 16v-5",scan:"M4 9V5a1 1 0 0 1 1-1h4 M15 4h4a1 1 0 0 1 1 1v4 M20 15v4a1 1 0 0 1-1 1h-4 M9 20H5a1 1 0 0 1-1-1v-4 M8 12h8 M12 8v8",
  filter:"M3 5h18l-7 8v5l-4 2v-7z",history:"M3 11a9 9 0 1 1 2.6 7.1 M3 5v6h6 M12 7v5l3 2",

@@ -1,0 +1,29 @@
+name: CIS precios de cartera
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "45 3,15 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: cis-portfolio-prices
+  cancel-in-progress: false
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python scripts/portfolio_prices.py
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}

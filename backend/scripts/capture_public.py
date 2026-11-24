@@ -142,6 +142,9 @@ def capture(limit=6, run_id=None):
                 raise RuntimeError("Expedientes pendientes: " + json.dumps(failures))
         with get_conn() as conn:
             conn.execute("UPDATE shadow_captures SET status='captured' WHERE run_id=? AND status='pending'", (run,))
+    from scripts.index_search import index_capture
+    with get_conn() as conn:
+        index_capture(conn, run)
     from scripts.cohort_report import publish_snapshot
     publish_snapshot()
     with get_conn() as conn:
