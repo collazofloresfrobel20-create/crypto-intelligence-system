@@ -207,7 +207,7 @@ function renderPredictions(preds) {
         <div class="timeline-wrap">${candidateTimeline(p)}</div>
         <div class="timeline-caption">Retorno máximo: ${p.max_return_pct}% &middot; Caída máxima: ${p.max_drawdown_pct != null ? p.max_drawdown_pct + "%" : "sin dato"} &middot; Retorno al día ${p.horizon_days}: ${p.return_pct}% &middot; Tesis: ${p.thesis_result}</div>
       ` : `<div class="section-title">Estado</div><div class="text-block faint">Pendiente de evaluar (horizonte ${p.horizon_days} días)</div>`}
-      <div class="case-actions">${networkLink(p)} <button type="button" class="light-button" data-paper="${p.id}">Simular estrategias</button></div>
+      <div class="case-actions">${networkLink(p)}  ${["bsc","solana"].includes(networkKey(p.chain_name)) && p.contract_address ? '<button type="button" class="light-button" data-paper="'+p.id+'">Simular estrategias</button>' : ''}</div>
     </article>`;
   }).join("");
   el.querySelectorAll("[data-paper]").forEach(button=>button.onclick=()=>{
@@ -293,6 +293,10 @@ let allPredictions = [];
 let networkScope = "both";
 try { const saved = sessionStorage.getItem("cis.network"); if(["both","bsc","solana","all"].includes(saved)) networkScope = saved; } catch {}
 $("networkScope").value = networkScope;
+function setHomeNetwork() {
+  $("home-network").value=["solana","bsc"].includes(networkScope) ? networkScope : "";
+}
+setHomeNetwork();
 function networkKey(value) {
   const name = String(value || "").trim().toLowerCase();
   if(["bnb","bnb chain","bnb smart chain","binance smart chain","56","bsc"].includes(name)) return "bsc";
@@ -309,6 +313,7 @@ function networkLink(p) {
 $("rankQuery").addEventListener("input",renderFiltered);
 $("networkScope").addEventListener("change",()=>{
   networkScope=$("networkScope").value;
+  setHomeNetwork();
   try { sessionStorage.setItem("cis.network",networkScope); } catch {}
   allPredictions=[]; renderFiltered(); renderStatusFilters(); renderVerdictFilters();
   $("overviewMetrics").replaceChildren(); $("overviewPicks").replaceChildren(); $("overviewVerdicts").replaceChildren(); $("opportunityMap").replaceChildren(); $("discardedTable").replaceChildren();
