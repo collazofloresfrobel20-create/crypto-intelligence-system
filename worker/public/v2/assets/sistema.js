@@ -881,6 +881,11 @@ async function loadCohorts(){
   const box=$("shadowCohorts");
   try {
     const snap=await api("/api/analytics/shadow_cohorts");
+    const published=new Date(snap.computed_at);
+    const known=Number.isFinite(published.getTime());
+    const stale=known && Date.now()-published.getTime()>36*3600000;
+    const ageNote=known ? '<p class="desc" role="status">Informe calculado el '+published.toLocaleString("es-MX")+
+      (stale ? '. Actualización atrasada. Las cifras corresponden a esa fecha.' : '.')+'</p>' : '';
     function draw(){
       const horizon=$("cohortDays").value;
       const rows=[...(snap.payload[horizon] || []), ...(snap.payload.universo_elegible?.[horizon] || [])];
@@ -888,7 +893,7 @@ async function loadCohorts(){
       const study=snap.payload.estudio_volumen;
       const states={en_observacion:"en observación",evidencia_insuficiente:"evidencia insuficiente",solo_descriptiva:"solo descriptiva",candidata_a_revision:"candidata a revisión humana"};
       const studyLine=study ? '<p class="desc">Volumen frente a liquidez y pérdida al cierre de 7 días · '+(states[study.estado] || "pendiente")+'. '+Number(study.medidos)+' contratos con cierre y '+Number(study.sin_cierre)+' sin cierre. Evaluación final el 31 de enero de 2027 UTC.'+(Number.isFinite(study.rr) ? ' Riesgo relativo '+study.rr.toFixed(2)+'×.' : '')+(Array.isArray(study.ic95_rr) ? ' IC 95% '+study.ic95_rr.map(n=>Number(n).toFixed(2)).join(' a ')+'.' : '')+(Number.isFinite(study.auc) ? ' AUC '+study.auc.toFixed(2)+'.' : '')+'</p>' : '';
-      const status=studyLine+(coverage ? '<p class="desc">Cobertura operativa · '+Number(coverage.dias_consecutivos)+' de 14 días UTC completos con dos capturas programadas, fuentes disponibles y cupos cubiertos en ambas cadenas.</p>' : '');
+      const status=ageNote+studyLine+(coverage ? '<p class="desc">Cobertura operativa · '+Number(coverage.dias_consecutivos)+' de 14 días UTC completos con dos capturas programadas, fuentes disponibles y cupos cubiertos en ambas cadenas.</p>' : '');
       const labels={ranking:"Ranking",sorteo:"Sorteo entre los restantes",alternativa:"Alternativas",todos_los_elegibles:"Total elegible (referencia)"};
       if(!rows.length){box.innerHTML=status+'<p>Aún no hay contratos elegibles.</p>';return;}
       box.innerHTML=status+'<p class="desc">Primera observación elegible por contrato. Retorno neto estimado para 100 USD, comisión de 0.3% por lado e impacto del pool. Referencia BTC/USDT.</p><div class="table-wrap"><table><thead><tr><th>Cadena</th><th>Grupo</th><th>Versión</th><th>Contratos</th><th>Pendientes</th><th>Sin precio</th><th>Neto mediano</th><th>Exceso vs. BTC</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+r.cadena+'</td><td>'+(labels[r.grupo] || r.grupo)+'</td><td>'+r.version.slice(0,8)+(r.version.includes('-public-') ? '…'+r.version.slice(-5) : '')+'</td><td>'+r.contratos+'</td><td>'+r.inmaduros+'</td><td>'+r.sin_precio+'</td><td>'+(r.mediana_neta_amm_pct==null?'Sin cierre':r.mediana_neta_amm_pct.toFixed(2)+'% · n='+r.con_costos)+'</td><td>'+(r.exceso_mediano_vs_btc_pp==null?'Sin cierre':r.exceso_mediano_vs_btc_pp.toFixed(2)+' pp · n='+r.con_benchmark_btc)+'</td></tr>').join('')+'</tbody></table></div>';

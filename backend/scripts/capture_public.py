@@ -142,14 +142,25 @@ def capture(limit=6, run_id=None):
                 raise RuntimeError("Expedientes pendientes: " + json.dumps(failures))
         with get_conn() as conn:
             conn.execute("UPDATE shadow_captures SET status='captured' WHERE run_id=? AND status='pending'", (run,))
+    publish_captures(run)
+    return dict(summary, reused=False)
+
+
+def publish_captures(run):
+    """Publica la captura actual y recupera índices aplazados usando las entradas originales."""
     from scripts.index_search import index_capture
-    with get_conn() as conn:
-        index_capture(conn, run)
     from scripts.cohort_report import publish_snapshot
+    with get_conn() as conn:
+        backlog = conn.execute("SELECT run_id FROM shadow_captures WHERE status='captured' AND run_id!=? "
+                               "ORDER BY observed_at LIMIT 8", (run,)).fetchall()
+        runs = [row["run_id"] for row in backlog] + [run]
+        for key in runs:
+            index_capture(conn, key)
     publish_snapshot()
     with get_conn() as conn:
-        conn.execute("UPDATE shadow_captures SET status='complete' WHERE run_id=?", (run,))
-    return dict(summary, reused=False)
+        placeholders = ",".join("?" for _ in runs)
+        conn.execute("UPDATE shadow_captures SET status='complete' WHERE status='captured' AND run_id IN (" +
+                     placeholders + ")", runs)
 
 
 if __name__ == "__main__":
