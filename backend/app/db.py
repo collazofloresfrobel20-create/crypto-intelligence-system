@@ -58,6 +58,19 @@ CREATE TABLE IF NOT EXISTS horizon_prices (
     token_key TEXT NOT NULL, days INTEGER NOT NULL, observed_at TEXT NOT NULL, price REAL NOT NULL,
     PRIMARY KEY (token_key, days)
 );
+CREATE TABLE IF NOT EXISTS matched_runs (
+    run_id TEXT NOT NULL, method TEXT NOT NULL, observed_at TEXT NOT NULL, version TEXT NOT NULL,
+    event TEXT NOT NULL, pairs TEXT NOT NULL, PRIMARY KEY (run_id,method)
+);
+CREATE TABLE IF NOT EXISTS matched_closes (
+    run_id TEXT NOT NULL, method TEXT NOT NULL, pick_key TEXT NOT NULL, days INTEGER NOT NULL,
+    close_run TEXT NOT NULL, closed_at TEXT NOT NULL, pick_price REAL NOT NULL, control_price REAL NOT NULL,
+    pick_depth REAL, control_depth REAL, PRIMARY KEY (run_id,method,pick_key,days)
+);
+CREATE TABLE IF NOT EXISTS matched_windows (
+    run_id TEXT NOT NULL, method TEXT NOT NULL, days INTEGER NOT NULL, capture_count INTEGER NOT NULL,
+    PRIMARY KEY(run_id,method,days)
+);
 CREATE TABLE IF NOT EXISTS shadow_captures (
     run_id TEXT PRIMARY KEY, observed_at TEXT NOT NULL, version TEXT NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('pending','captured','complete')), payload TEXT NOT NULL

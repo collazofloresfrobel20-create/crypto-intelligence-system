@@ -877,6 +877,20 @@ function loadView(key) {
 }
 window.addEventListener("cis:view",e=>loadView(e.detail));
 loadView(location.hash.slice(1)||"resumen");
+function matchedSection(report, horizon, selectedWeek) {
+  if (!report) return "";
+  const rows=report.filas.filter(r=>r.dias===Number(horizon));
+  const weeks=[...new Set(rows.map(r=>r.semana))].sort().reverse();
+  const week=weeks.includes(selectedWeek)?selectedWeek:weeks[0];
+  const format=n=>n==null?"Sin dato":Number(n).toLocaleString("es-MX",{maximumFractionDigits:2});
+  const chainName=c=>c==="bsc"?"BNB Smart Chain":"Solana";
+  const armName=a=>a==="ranked"?"Ranking":"Sorteo";
+  const select=weeks.length?'<label>Semana UTC <select id="pairWeek">'+weeks.map(w=>'<option'+(week===w?' selected':'')+'>'+w+'</option>').join("")+'</select></label>':"";
+  const table=rows.length?'<div class="table-wrap"><table><thead><tr><th>Red / grupo</th><th>Versión</th><th>Selecciones</th><th>Sin par</th><th>Pendientes</th><th>Sin precio conjunto</th><th>Sin costos</th><th>Pares medidos</th><th>Ventaja mediana</th></tr></thead><tbody>'+rows.filter(r=>r.semana===week).map(r=>'<tr><td>'+chainName(r.cadena)+' · '+armName(r.grupo)+'</td><td>'+r.version.slice(0,8)+' · '+r.origen+'</td><td>'+r.selecciones+'</td><td>'+r.sin_par+'</td><td>'+r.pendientes+'</td><td>'+r.sin_precio+'</td><td>'+r.sin_costos+'</td><td>'+r.medidos+'</td><td>'+(r.mediana_diferencia_pp==null?'Sin resultado':format(r.mediana_diferencia_pp)+' pp')+'</td></tr>').join("")+'</tbody></table></div>':'<p>Todavía no hay selecciones programadas.</p>';
+  const example=report.ejemplos.length?'<details><summary>Ver las parejas de la última corrida programada</summary><p>'+report.ultima_programada+'</p><ul>'+report.ejemplos.map(r=>'<li>'+chainName(r.cadena)+' · '+armName(r.grupo)+' · '+(r.simbolo||'Token')+' <code>'+r.seleccion+'</code> ('+format(r.liquidez)+' USD) · '+(r.alternativa?(r.simbolo_alternativa||'Alternativa')+' <code>'+r.alternativa+'</code> ('+format(r.liquidez_alternativa)+' USD)':'Sin alternativa comparable')+'</li>').join("")+'</ul></details>':"";
+  return '<section class="paired-study"><h3>Selección frente a una alternativa comparable</h3><p>Una decisión por corrida. Comparamos dos contratos de la misma red con liquidez inicial similar (hasta 2×), usando 100 USD por lado. Un valor positivo indica que la selección rindió más después de los costos estimados. Cada contrato puede reaparecer en otras corridas.</p>'+select+table+example+'</section>';
+}
+
 async function loadCohorts(){
   const box=$("shadowCohorts");
   try {
@@ -886,6 +900,7 @@ async function loadCohorts(){
     const stale=known && Date.now()-published.getTime()>36*3600000;
     const ageNote=known ? '<p class="desc" role="status">Informe calculado el '+published.toLocaleString("es-MX")+
       (stale ? '. Actualización atrasada. Las cifras corresponden a esa fecha.' : '.')+'</p>' : '';
+    let pairWeek="";
     function draw(){
       const horizon=$("cohortDays").value;
       const rows=[...(snap.payload[horizon] || []), ...(snap.payload.universo_elegible?.[horizon] || [])];
@@ -897,11 +912,12 @@ async function loadCohorts(){
       const researchLine=Array.isArray(researchRows) ? '<p class="desc">Contratos elegibles con expediente en corridas programadas de los últimos 14 días · '+
         researchRows.map(r=>(r.cadena==="bsc" ? "BNB Smart Chain" : "Solana")+" "+Number(r.investigados)+" de "+Number(r.elegibles)+
           (r.porcentaje==null ? " (sin elegibles)" : " ("+Number(r.porcentaje)+"%)")).join(" · ")+'.</p>' : '';
-      const status=ageNote+researchLine+studyLine+(coverage ? '<p class="desc">Cobertura operativa · '+Number(coverage.dias_consecutivos)+' de 14 días UTC completos con dos capturas programadas, fuentes disponibles y cupos cubiertos en ambas cadenas.</p>' : '');
+      const status=ageNote+matchedSection(snap.payload.pares_por_liquidez,horizon,pairWeek)+researchLine+studyLine+(coverage ? '<p class="desc">Cobertura operativa · '+Number(coverage.dias_consecutivos)+' de 14 días UTC completos con dos capturas programadas, fuentes disponibles y cupos cubiertos en ambas cadenas.</p>' : '');
       const labels={ranking:"Ranking",sorteo:"Sorteo entre los restantes",alternativa:"Alternativas",todos_los_elegibles:"Total elegible (referencia)"};
       if(!rows.length){box.innerHTML=status+'<p>Aún no hay contratos elegibles.</p>';return;}
       box.innerHTML=status+'<p class="desc">Primera observación elegible por contrato. Retorno neto estimado para 100 USD, comisión de 0.3% por lado e impacto del pool. Referencia BTC/USDT.</p><div class="table-wrap"><table><thead><tr><th>Cadena</th><th>Grupo</th><th>Versión</th><th>Contratos</th><th>Pendientes</th><th>Sin precio</th><th>Neto mediano</th><th>Exceso vs. BTC</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+r.cadena+'</td><td>'+(labels[r.grupo] || r.grupo)+'</td><td>'+r.version.slice(0,8)+(r.version.includes('-public-') ? '…'+r.version.slice(-5) : '')+'</td><td>'+r.contratos+'</td><td>'+r.inmaduros+'</td><td>'+r.sin_precio+'</td><td>'+(r.mediana_neta_amm_pct==null?'Sin cierre':r.mediana_neta_amm_pct.toFixed(2)+'% · n='+r.con_costos)+'</td><td>'+(r.exceso_mediano_vs_btc_pp==null?'Sin cierre':r.exceso_mediano_vs_btc_pp.toFixed(2)+' pp · n='+r.con_benchmark_btc)+'</td></tr>').join('')+'</tbody></table></div>';
     }
+    box.onchange=e=>{if(e.target.id==="pairWeek"){pairWeek=e.target.value;draw();$("pairWeek")?.focus();}};
     $("cohortDays").onchange=draw;draw();
   } catch { box.textContent="Seguimiento no disponible para esta base."; }
 }

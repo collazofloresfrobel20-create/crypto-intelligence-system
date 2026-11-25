@@ -159,6 +159,8 @@ def publish_snapshot():
         sessions = db.execute("SELECT observed_at,status,json_extract(payload,'$.event') AS event, "
                               "json_extract(payload,'$.full_quota') AS full_quota, json_extract(payload,'$.feeds_ok') AS feeds_ok "
                               "FROM shadow_captures WHERE observed_at>=?", ((now-timedelta(days=15)).isoformat(),)).fetchall()
+        from app import matched_controls
+        results["pares_por_liquidez"] = matched_controls.report(db, now, amm_net)
         results["cobertura"] = coverage_status(sessions, now)
         results["cobertura_investigacion"] = research_coverage(db, now)
         db.execute("INSERT INTO analytics_snapshots(kind,computed_at,payload) VALUES(?,?,?)",
