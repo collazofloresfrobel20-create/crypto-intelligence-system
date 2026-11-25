@@ -356,9 +356,24 @@ else:
             conn.close()
 
 
+def ensure_search_columns(conn):
+    """Actualiza también las instalaciones que ya tenían el primer índice por contrato."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(search_archive)").fetchall()}
+    for name, kind in (("first_at","TEXT"), ("first_price","REAL"), ("last_price","REAL")):
+        if name in columns:
+            continue
+        try:
+            conn.execute(f"ALTER TABLE search_archive ADD COLUMN {name} {kind}")
+        except Exception:
+            # Otro workflow puede haber aplicado la misma migración mientras tanto.
+            if name not in {row["name"] for row in conn.execute("PRAGMA table_info(search_archive)").fetchall()}:
+                raise
+
+
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        ensure_search_columns(conn)
     for stmt in _MIGRATIONS:
         try:
             with get_conn() as conn:

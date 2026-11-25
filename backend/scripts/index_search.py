@@ -38,8 +38,8 @@ def index_capture(conn, run):
         placeholders = ",".join(["(?,?,?,?,?,?,?,?,?,?)"] * len(batch))
         conn.execute(insert + placeholders + """
         ON CONFLICT(token_key,eligible) DO UPDATE SET
-            first_price=CASE WHEN excluded.first_at<first_at THEN excluded.first_price ELSE first_price END,
-            first_at=min(first_at,excluded.first_at),
+            first_price=CASE WHEN first_at IS NULL OR excluded.first_at<first_at THEN excluded.first_price ELSE first_price END,
+            first_at=min(coalesce(first_at,excluded.first_at),excluded.first_at),
             run_id=CASE WHEN excluded.observed_at>=observed_at THEN excluded.run_id ELSE run_id END,
             symbol=CASE WHEN excluded.observed_at>=observed_at THEN excluded.symbol ELSE symbol END,
             name=CASE WHEN excluded.observed_at>=observed_at THEN excluded.name ELSE name END,

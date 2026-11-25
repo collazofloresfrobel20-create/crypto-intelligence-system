@@ -124,6 +124,29 @@ def coverage_status(rows, now):
     return dict(dias_consecutivos=streak, objetivo_dias=14, cumple=streak == 14, fechas=dates)
 
 
+def research_coverage(db, now):
+    """Contratos elegibles distintos investigados en sus propias corridas programadas."""
+    sql = """
+        SELECT substr(s.token_key,1,instr(s.token_key,':')-1) AS chain,
+               count(DISTINCT s.token_key) AS eligible,
+               count(DISTINCT d.token_key) AS researched
+          FROM shadow_captures c
+          JOIN survivor_observations s ON s.run_id=c.run_id AND s.eligible=1
+          LEFT JOIN research_dossiers d ON d.run_id=s.run_id AND d.token_key=s.token_key
+         WHERE c.status IN ('captured','complete') AND json_extract(c.payload,'$.event')='schedule'
+           AND c.observed_at>=? AND c.observed_at<=?
+         GROUP BY chain
+    """
+    by_chain = {r["chain"]:r for r in db.execute(sql, ((now-timedelta(days=14)).isoformat(),now.isoformat())).fetchall()}
+    rows = []
+    for chain in ("bsc","solana"):
+        row = by_chain.get(chain, {"eligible":0,"researched":0})
+        eligible, researched = row["eligible"], row["researched"]
+        rows.append(dict(cadena=chain,elegibles=eligible,investigados=researched,
+                         porcentaje=round(100*researched/eligible,1) if eligible else None))
+    return rows
+
+
 def publish_snapshot():
     rows, independent = inputs()
     now = datetime.now(timezone.utc)
@@ -137,6 +160,7 @@ def publish_snapshot():
                               "json_extract(payload,'$.full_quota') AS full_quota, json_extract(payload,'$.feeds_ok') AS feeds_ok "
                               "FROM shadow_captures WHERE observed_at>=?", ((now-timedelta(days=15)).isoformat(),)).fetchall()
         results["cobertura"] = coverage_status(sessions, now)
+        results["cobertura_investigacion"] = research_coverage(db, now)
         db.execute("INSERT INTO analytics_snapshots(kind,computed_at,payload) VALUES(?,?,?)",
                    ("shadow_cohorts",now.isoformat(),json.dumps(results,ensure_ascii=False)))
     return results
